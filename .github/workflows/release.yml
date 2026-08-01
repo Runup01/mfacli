@@ -12,7 +12,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # ── Binary builds ──────────────────────────────────────────────
+  # ── Binary builds (tarball / zip) ─────────────────────────────
   build:
     strategy:
       fail-fast: false
@@ -20,19 +20,19 @@ jobs:
         include:
           - target: aarch64-apple-darwin
             os: macos-latest
-            name: mfacli-aarch64-apple-darwin.tar.gz
+            archive: mfacli-aarch64-apple-darwin.tar.gz
           - target: x86_64-apple-darwin
             os: macos-latest
-            name: mfacli-x86_64-apple-darwin.tar.gz
+            archive: mfacli-x86_64-apple-darwin.tar.gz
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            name: mfacli-x86_64-unknown-linux-gnu.tar.gz
+            archive: mfacli-x86_64-unknown-linux-gnu.tar.gz
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
-            name: mfacli-aarch64-unknown-linux-gnu.tar.gz
+            archive: mfacli-aarch64-unknown-linux-gnu.tar.gz
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            name: mfacli-x86_64-pc-windows-msvc.zip
+            archive: mfacli-x86_64-pc-windows-msvc.zip
 
     runs-on: ${{ matrix.os }}
 
@@ -61,7 +61,7 @@ jobs:
           mkdir -p dist
           cp target/${{ matrix.target }}/release/mfa dist/
           cp README.md LICENSE dist/
-          tar czf ${{ matrix.name }} -C dist .
+          tar czf ${{ matrix.archive }} -C dist .
 
       - name: Package (Windows)
         if: matrix.os == 'windows-latest'
@@ -71,19 +71,19 @@ jobs:
           Copy-Item target/${{ matrix.target }}/release/mfa.exe dist/
           Copy-Item README.md dist/
           Copy-Item LICENSE dist/
-          Compress-Archive -Path dist/* -DestinationPath ${{ matrix.name }}
+          Compress-Archive -Path dist/* -DestinationPath ${{ matrix.archive }}
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ matrix.name }}
-          generate_release_notes: true
+          files: ${{ matrix.archive }}
 
   # ── Linux packages (DEB + RPM) ────────────────────────────────
   package-linux:
     needs: build
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         include:
           - arch: amd64
@@ -114,7 +114,10 @@ jobs:
 
       - name: Install nfpm
         run: |
-          curl -sfL https://install.goreleaser.com/github.com/goreleaser/nfpm.sh | sh -s -- -b /usr/local/bin
+          NFPM_VERSION=2.41.1
+          curl -sfL "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz" \
+            | tar xz -C /usr/local/bin nfpm
+          nfpm --version
 
       - name: Extract version
         id: ver
@@ -132,8 +135,7 @@ jobs:
           MFA_VERSION: ${{ steps.ver.outputs.version }}
           MFA_ARCH: ${{ matrix.arch }}
         run: |
-          nfpm package --packager deb --target ../mfacli_${MFA_VERSION}_${{ matrix.arch }}.deb
-        continue-on-error: false
+          nfpm package --packager deb --target "../mfacli_${MFA_VERSION}_${{ matrix.arch }}.deb"
 
       - name: Build .rpm
         working-directory: pkg
@@ -141,38 +143,24 @@ jobs:
           MFA_VERSION: ${{ steps.ver.outputs.version }}
           MFA_ARCH: ${{ matrix.arch }}
         run: |
-          nfpm package --packager rpm --target ../mfacli-${MFA_VERSION}-1.${{ matrix.rpm_arch }}.rpm
-        continue-on-error: false
+          nfpm package --packager rpm --target "../mfacli-${MFA_VERSION}-1.${{ matrix.rpm_arch }}.rpm"
 
-      - name: Upload packages
+      - name: Upload DEB
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            mfacli_*.deb
-            mfacli-*.rpm
+          files: mfacli_${{ steps.ver.outputs.version }}_${{ matrix.arch }}.deb
 
-  # ── Windows installer (optional MSI via WiX) ──────────────────
-  package-windows:
-    runs-on: windows-latest
+      - name: Upload RPM
+        uses: softprops/action-gh-release@v2
+        with:
+          files: mfacli-${{ steps.ver.outputs.version }}-1.${{ matrix.rpm_arch }}.rpm
+
+  # ── Release notes (single job, no duplication) ────────────────
+  release-notes:
+    needs: [build, package-linux]
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build
-        run: cargo build --release
-
-      - name: Create installer directory
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Path staging -Force
-          Copy-Item target/release/mfa.exe staging/
-          Copy-Item README.md staging/
-          Copy-Item LICENSE staging/
-          Compress-Archive -Path staging/* -DestinationPath mfacli-windows-x86_64.zip
-
-      - name: Upload
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
-          files: mfacli-windows-x86_64.zip
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
