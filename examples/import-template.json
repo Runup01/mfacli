@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "name": "github",
+      "secret": "JBSWY3DPEHPK3PXP",
+      "issuer": "GitHub",
+      "algorithm": "SHA1",
+      "digits": 6,
+      "period": 30,
+      "otp_type": "totp",
+      "counter": 0
+    },
+    {
+      "name": "legacy",
+      "secret": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+      "issuer": "Legacy",
+      "algorithm": "SHA1",
+      "digits": 6,
+      "period": 30,
+      "otp_type": "hotp",
+      "counter": 42
+    }
+  ]
+}

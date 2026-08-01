@@ -1,0 +1,7 @@
+# mfacli import template (otpauth format) — the DEFAULT export format too.
+# One otpauth:// URI per line. Lines starting with '#' and blank lines are ignored.
+# Hand-written '@' / plain text works; mfa also reads percent-encoded forms
+# (e.g. %40 = '@', %E4%B8%AD = '中') that its own exporter produces.
+otpauth://totp/GitHub:alice?secret=JBSWY3DPEHPK3PXP&issuer=GitHub&algorithm=SHA1&digits=6&period=30
+otpauth://totp/AWS:bob@corp?secret=KRSXG5CTMVRXEZLU&issuer=AWS&algorithm=SHA1&digits=6&period=30
+otpauth://hotp/Legacy:carol?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=Legacy&algorithm=SHA1&digits=6&period=30&counter=42
