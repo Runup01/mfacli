@@ -92,7 +92,7 @@
 
 ## 安装
 
-mfacli 是**静态编译的单文件**，安装即把 `mfa` 二进制放进 `PATH`，无需运行时、无需依赖库。当前版本 **0.1.1**。
+mfacli 是**静态编译的单文件**，安装即把 `mfa` 二进制放进 `PATH`，无需运行时、无需依赖库。当前版本 **0.1.3**。
 
 ### 一行安装（按平台）
 
@@ -103,13 +103,13 @@ tar xzf mfacli-aarch64-apple-darwin.tar.gz && chmod +x mfa && sudo mv mfa /usr/l
 
 # macOS (Intel)：把上面 aarch64 换成 x86_64 即可
 
-# Debian / Ubuntu (amd64) — 文件名含版本号，升级时改 0.1.1
-curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.1/mfacli_0.1.1_amd64.deb
-sudo dpkg -i mfacli_0.1.1_amd64.deb
+# Debian / Ubuntu (amd64) — 文件名含版本号，升级时改 0.1.3
+curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.3/mfacli_0.1.3_amd64.deb
+sudo dpkg -i mfacli_0.1.3_amd64.deb
 
 # CentOS / Rocky / AlmaLinux (x86_64)
-curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.1/mfacli-0.1.1-1.x86_64.rpm
-sudo rpm -i mfacli-0.1.1-1.x86_64.rpm
+curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.3/mfacli-0.1.3-1.x86_64.rpm
+sudo rpm -i mfacli-0.1.3-1.x86_64.rpm
 
 # Windows：下载 mfacli-x86_64-pc-windows-msvc.zip，解压得 mfa.exe，放入 PATH 目录
 ```
@@ -117,7 +117,7 @@ sudo rpm -i mfacli-0.1.1-1.x86_64.rpm
 安装后验证：
 
 ```bash
-mfa --version      # 应输出 mfa 0.1.1
+mfa --version      # 应输出 mfa 0.1.3
 mfa --help         # 查看全部子命令
 ```
 
@@ -161,17 +161,17 @@ mfa --help         # 查看全部子命令
 
 ```bash
 # Debian / Ubuntu 全家桶
-sudo apt update && sudo apt install -y ./mfacli_0.1.1_amd64.deb
+sudo apt update && sudo apt install -y ./mfacli_0.1.3_amd64.deb
 
 # RHEL / CentOS 7（yum）
-sudo yum install -y ./mfacli-0.1.1-1.x86_64.rpm
+sudo yum install -y ./mfacli-0.1.3-1.x86_64.rpm
 
 # CentOS 8+ / Rocky / Alma / Fedora（dnf）
-sudo dnf install -y ./mfacli-0.1.1-1.x86_64.rpm
+sudo dnf install -y ./mfacli-0.1.3-1.x86_64.rpm
 
 # 已装后升级
-sudo dpkg -i ./mfacli_0.1.1_amd64.deb     # deb 直接覆盖
-sudo rpm -U ./mfacli-0.1.1-1.x86_64.rpm    # rpm 用 -U 升级
+sudo dpkg -i ./mfacli_0.1.3_amd64.deb     # deb 直接覆盖
+sudo rpm -U ./mfacli-0.1.3-1.x86_64.rpm    # rpm 用 -U 升级
 ```
 
 - **架构核对**：`uname -m` → `x86_64` 选 x86_64 包，`aarch64` 选 aarch64 包。
