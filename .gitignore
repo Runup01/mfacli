@@ -1,0 +1,30 @@
+/target
+*.swp
+*.swo
+.DS_Store
+
+# mfacli local data — default lives in ~/.config/mfa-cli (outside repo);
+# this is a safety net so secrets never get committed by accident.
+vault.json
+vault.enc
+config.json
+weather_cache.txt
+*.enc
+
+# Personal OTP export dumps — import them, then delete. Never commit.
+# (Add your own filenames here if you drop exports into the repo dir.)
+auth.txt
+otp.txt
+2fa.txt
+*.otpauth
+
+# === Safety net: never commit personal data dumps in repo root ===
+# These patterns only match files at the top level (not in subdirs).
+# If you need a .txt in examples/, it's already tracked and won't be affected.
+/*.txt
+/*.json
+/*.enc
+/*.csv
+/*.otpauth
+*.orig
+*.rej

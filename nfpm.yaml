@@ -1,0 +1,28 @@
+name: mfacli
+arch: ${MFA_ARCH}
+platform: linux
+version: ${MFA_VERSION}
+section: utils
+priority: optional
+maintainer: Runup01 <bdstravel@126.com>
+description: |
+  A developer-friendly, local-first CLI MFA/OTP manager.
+  Supports TOTP/HOTP/Steam Guard, encrypted storage, interactive TUI,
+  QR code show/scan, cross-platform clipboard, and Chinese almanac.
+vendor: mfacli
+homepage: https://github.com/Runup01/mfacli
+license: MIT
+contents:
+  - src: ./mfa
+    dst: /usr/local/bin/mfa
+  - src: ./README.md
+    dst: /usr/share/doc/mfacli/README.md
+  - src: ./LICENSE
+    dst: /usr/share/doc/mfacli/LICENSE
+overrides:
+  rpm:
+    recommends:
+      - xclip
+  deb:
+    recommends:
+      - xclip

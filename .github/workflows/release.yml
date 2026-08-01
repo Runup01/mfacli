@@ -1,0 +1,178 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ── Binary builds ──────────────────────────────────────────────
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            name: mfacli-aarch64-apple-darwin.tar.gz
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            name: mfacli-x86_64-apple-darwin.tar.gz
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            name: mfacli-x86_64-unknown-linux-gnu.tar.gz
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            name: mfacli-aarch64-unknown-linux-gnu.tar.gz
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            name: mfacli-x86_64-pc-windows-msvc.zip
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation linker (Linux ARM64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Build
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/mfa dist/
+          cp README.md LICENSE dist/
+          tar czf ${{ matrix.name }} -C dist .
+
+      - name: Package (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist -Force
+          Copy-Item target/${{ matrix.target }}/release/mfa.exe dist/
+          Copy-Item README.md dist/
+          Copy-Item LICENSE dist/
+          Compress-Archive -Path dist/* -DestinationPath ${{ matrix.name }}
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.name }}
+          generate_release_notes: true
+
+  # ── Linux packages (DEB + RPM) ────────────────────────────────
+  package-linux:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            target: x86_64-unknown-linux-gnu
+            rpm_arch: x86_64
+          - arch: arm64
+            target: aarch64-unknown-linux-gnu
+            rpm_arch: aarch64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation linker (ARM64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Build binary
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Install nfpm
+        run: |
+          curl -sfL https://install.goreleaser.com/github.com/goreleaser/nfpm.sh | sh -s -- -b /usr/local/bin
+
+      - name: Extract version
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare staging
+        run: |
+          mkdir -p pkg
+          cp target/${{ matrix.target }}/release/mfa pkg/
+          cp README.md LICENSE pkg/
+
+      - name: Build .deb
+        working-directory: pkg
+        env:
+          MFA_VERSION: ${{ steps.ver.outputs.version }}
+          MFA_ARCH: ${{ matrix.arch }}
+        run: |
+          nfpm package --packager deb --target ../mfacli_${MFA_VERSION}_${{ matrix.arch }}.deb
+        continue-on-error: false
+
+      - name: Build .rpm
+        working-directory: pkg
+        env:
+          MFA_VERSION: ${{ steps.ver.outputs.version }}
+          MFA_ARCH: ${{ matrix.arch }}
+        run: |
+          nfpm package --packager rpm --target ../mfacli-${MFA_VERSION}-1.${{ matrix.rpm_arch }}.rpm
+        continue-on-error: false
+
+      - name: Upload packages
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            mfacli_*.deb
+            mfacli-*.rpm
+
+  # ── Windows installer (optional MSI via WiX) ──────────────────
+  package-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Create installer directory
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path staging -Force
+          Copy-Item target/release/mfa.exe staging/
+          Copy-Item README.md staging/
+          Copy-Item LICENSE staging/
+          Compress-Archive -Path staging/* -DestinationPath mfacli-windows-x86_64.zip
+
+      - name: Upload
+        uses: softprops/action-gh-release@v2
+        with:
+          files: mfacli-windows-x86_64.zip
