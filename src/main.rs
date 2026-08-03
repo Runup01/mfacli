@@ -1179,6 +1179,7 @@ fn cmd_lock(backup: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     if pw1.len() < 8 {
         println!("  {} 密码少于 8 位，记错 / 被撞风险高。", "!".yellow());
         print!("  仍要继续请输入 yes：");
+        std::io::Write::flush(&mut std::io::stdout())?;
         let mut ans = String::new();
         std::io::BufRead::read_line(&mut std::io::stdin().lock(), &mut ans)?;
         if ans.trim() != "yes" {
@@ -1238,9 +1239,13 @@ fn cmd_unlock() -> Result<(), Box<dyn std::error::Error>> {
         "明文".red().bold()
     );
     println!("  共享 / 公共电脑请勿关闭。");
-    print!("  输入密码以证明你是所有者，并确认关闭 [y/N]：");
+    println!();
+    println!("  第 1/2 步：输入当前锁密码，证明你是所有者");
     // First prove ownership by decrypting (friendly error + escape hint on failure).
     let vault = storage::vault::Vault::load()?;
+    println!("  {} 密码验证通过", "✓".green());
+    print!("  第 2/2 步：确认关闭应用锁 [y/N]：");
+    std::io::Write::flush(&mut std::io::stdout())?;
     let mut ans = String::new();
     std::io::BufRead::read_line(&mut std::io::stdin().lock(), &mut ans)?;
     if ans.trim().to_lowercase() != "y" {

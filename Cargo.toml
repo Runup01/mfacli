@@ -1,6 +1,6 @@
 [package]
 name = "mfacli"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 description = "A developer-friendly, local-first CLI MFA/OTP manager with encrypted storage"
 license = "MIT"
