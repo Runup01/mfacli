@@ -229,6 +229,10 @@ pub enum Commands {
         #[arg(long, value_parser = parse_on_off)]
         keychain: Option<bool>,
 
+        /// QR render style: half = compact half-blocks (default) / block = full-blocks (for terminals that distort half-blocks)
+        #[arg(long, value_parser = ["half", "block"])]
+        qr_style: Option<String>,
+
         /// Restore all settings to defaults
         #[arg(long)]
         reset: bool,

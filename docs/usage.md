@@ -144,10 +144,11 @@ mfa import -s encrypted backup.enc
 |------|------|------|
 | `--pet` | robot/dino/cat/ghost/dragon | 宠物风格 |
 | `--city` | 城市名 | 天气城市 |
-| `--show-weather` | true/false | 天气开关 |
-| `--show-bazi` | true/false | 黄历开关 |
-| `--show-pet` | true/false | 宠物开关 |
+| `--show-weather` | on/off | 天气开关 |
+| `--show-bazi` | on/off | 黄历开关 |
+| `--show-pet` | on/off | 宠物开关 |
 | `--keychain` | on/off | 本机免密：vault 密码托管到系统钥匙串 |
+| `--qr-style` | half/block | 二维码渲染：half 半高块紧凑（默认）；block 全块，终端字体把 `▀▄` 渲染失真时改用 |
 | `--reset` | （无值） | 恢复所有设置为默认（含清除钥匙串托管） |
 
 全局参数 `--no-keychain`：本次命令绕过免密、强制手动输密码（如 `mfa --no-keychain list`）。

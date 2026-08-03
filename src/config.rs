@@ -15,6 +15,12 @@ pub struct Config {
     pub show_pet: bool,
     #[serde(default)]
     pub keychain: bool,
+    #[serde(default = "default_qr_style")]
+    pub qr_style: String,
+}
+
+fn default_qr_style() -> String {
+    "half".to_string()
 }
 
 fn default_pet() -> String {
@@ -34,6 +40,7 @@ impl Default for Config {
             show_bazi: true,
             show_pet: true,
             keychain: false,
+            qr_style: default_qr_style(),
         }
     }
 }

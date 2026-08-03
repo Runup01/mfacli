@@ -14,7 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - TUI list columns no longer shift by one on the longest-name row (name column padding off-by-one)
 - `scan` conflict prompt now tells "vault 中已存在" apart from "本批次重复" (duplicate QR images inside one batch no longer look like ghost entries)
-- QR display now uses only full-block '█' + space (one cell per module): crisp and identical on macOS / Linux / SSH / web terminals, where half-block glyphs ('▀'/'▄') distort; verified decodable end-to-end
+- QR display is now configurable: `half` (default, compact half-blocks) and `block` (full-block '█' only, for terminals whose fonts distort half-blocks) — switch via `mfa config --qr-style half|block` or TUI Settings → QR Style; both verified decodable end-to-end
+- otpauth URIs now omit spec-default params (SHA1/6/30), shrinking the QR payload and thus the on-screen QR size
 
 ## [0.1.8] - 2026-08-03
 

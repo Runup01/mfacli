@@ -161,9 +161,17 @@ impl OtpEntry {
         if let Some(iss) = &self.issuer {
             uri.push_str(&format!("&issuer={}", pct_encode(iss)));
         }
-        uri.push_str(&format!("&algorithm={}", self.algorithm));
-        uri.push_str(&format!("&digits={}", self.digits));
-        uri.push_str(&format!("&period={}", self.period));
+        // Omit spec-default params to keep the QR payload (and thus the
+        // QR itself) as small as possible
+        if self.algorithm != "SHA1" {
+            uri.push_str(&format!("&algorithm={}", self.algorithm));
+        }
+        if self.digits != 6 {
+            uri.push_str(&format!("&digits={}", self.digits));
+        }
+        if self.period != 30 {
+            uri.push_str(&format!("&period={}", self.period));
+        }
         if self.otp_type == "hotp" {
             uri.push_str(&format!("&counter={}", self.counter));
         }

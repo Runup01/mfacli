@@ -187,8 +187,9 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             show_bazi,
             show_pet,
             keychain,
+            qr_style,
             reset,
-        }) => cmd_config(pet, city, show_weather, show_bazi, show_pet, keychain, reset),
+        }) => cmd_config(pet, city, show_weather, show_bazi, show_pet, keychain, qr_style, reset),
     }
 }
 
@@ -337,7 +338,7 @@ fn cmd_show(name: &str) -> Result<(), Box<dyn std::error::Error>> {
     println!("  {}", "QR Code (scan with phone authenticator):".bold());
     println!();
 
-    let qr = utils::qrcode_util::render_to_terminal(&entry.to_otpauth_uri())?;
+    let qr = utils::qrcode_util::render_qr(&uri, &config::Config::load().qr_style)?;
     for line in qr.lines() {
         println!("  {}", line);
     }
@@ -1433,6 +1434,7 @@ fn cmd_config(
     show_bazi: Option<bool>,
     show_pet: Option<bool>,
     keychain: Option<bool>,
+    qr_style: Option<String>,
     reset: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = config::Config::load();
@@ -1445,6 +1447,12 @@ fn cmd_config(
             "{} 设置已恢复默认 (pet=robot, weather/bazi/pet=ON, keychain=off；钥匙串托管已清除)",
             "✓".green()
         );
+        changed = true;
+    }
+
+    if let Some(v) = &qr_style {
+        config.qr_style = v.clone();
+        println!("{} QR style: {}", "✓".green(), v);
         changed = true;
     }
 

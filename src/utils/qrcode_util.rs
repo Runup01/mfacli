@@ -2,40 +2,62 @@ use qrcode::{EcLevel, QrCode};
 
 /// Render a QR code as terminal text.
 ///
-/// Uses only full-block '█' + space (one cell per module): the two most
-/// universally supported glyphs, so output stays crisp on macOS, Linux,
-/// SSH and web terminals alike (half-block chars like '▀'/'▄' distort on
-/// terminals whose fonts/line-spacing misrender them).
-pub fn render_to_terminal(data: &str) -> Result<String, Box<dyn std::error::Error>> {
+/// `half` (default): half-block glyphs ('▀'/'▄'/'█'), two module rows per
+/// terminal row — smallest and square; crisp on well-behaved terminals.
+/// `block`: only '█' + space, one module per cell — for terminals whose
+/// fonts / line-spacing misrender half-block glyphs.
+pub fn render_qr(data: &str, style: &str) -> Result<String, Box<dyn std::error::Error>> {
     let code = QrCode::with_error_correction_level(data.as_bytes(), EcLevel::L)?;
     let colors = code.to_colors();
     let width = code.width();
-
     let quiet = 1;
-    let row_w = width + quiet * 2;
-    let blank = " ".repeat(row_w);
+    let blank = " ".repeat(width + quiet * 2);
 
     let mut output = String::new();
-    for _ in 0..quiet {
-        output.push_str(&blank);
-        output.push('\n');
-    }
-    for y in 0..width {
-        output.push_str(&" ".repeat(quiet));
-        for x in 0..width {
-            output.push(if colors[y * width + x] == qrcode::Color::Dark {
-                '█'
-            } else {
-                ' '
-            });
+    if style == "block" {
+        for _ in 0..quiet {
+            output.push_str(&blank);
+            output.push('\n');
         }
-        output.push_str(&" ".repeat(quiet));
-        output.push('\n');
-    }
-    for _ in 0..quiet {
+        for y in 0..width {
+            output.push_str(&" ".repeat(quiet));
+            for x in 0..width {
+                output.push(if colors[y * width + x] == qrcode::Color::Dark {
+                    '█'
+                } else {
+                    ' '
+                });
+            }
+            output.push_str(&" ".repeat(quiet));
+            output.push('\n');
+        }
+    } else {
         output.push_str(&blank);
         output.push('\n');
+        let mut y = 0;
+        while y < width {
+            output.push(' ');
+            for x in 0..width {
+                let top = colors[y * width + x] == qrcode::Color::Dark;
+                let bottom = if y + 1 < width {
+                    colors[(y + 1) * width + x] == qrcode::Color::Dark
+                } else {
+                    false
+                };
+                output.push(match (top, bottom) {
+                    (true, true) => '█',
+                    (true, false) => '▀',
+                    (false, true) => '▄',
+                    (false, false) => ' ',
+                });
+            }
+            output.push(' ');
+            output.push('\n');
+            y += 2;
+        }
     }
+    output.push_str(&blank);
+    output.push('\n');
 
     Ok(output)
 }

@@ -214,7 +214,7 @@ enum StatusKind {
     Info,
 }
 
-const SETTINGS_ITEMS: [&str; 13] = [
+const SETTINGS_ITEMS: [&str; 14] = [
     "Pet Style",
     "Toggle Weather",
     "Toggle BaZi",
@@ -227,6 +227,7 @@ const SETTINGS_ITEMS: [&str; 13] = [
     "Clear all entries",
     "Reset config",
     "Toggle Encryption",
+    "QR Style (half=compact / block=compat)",
     "Close Settings",
 ];
 
@@ -753,6 +754,17 @@ impl TuiApp {
                 ));
             }
             12 => {
+                self.config.qr_style = if self.config.qr_style == "block" {
+                    "half".into()
+                } else {
+                    "block".into()
+                };
+                self.status_message = Some((
+                    format!("QR style: {}", self.config.qr_style),
+                    StatusKind::Success,
+                ));
+            }
+            13 => {
                 self.mode = Mode::Normal;
                 let _ = self.config.save();
             }
@@ -836,7 +848,7 @@ impl TuiApp {
         if let Some(idx) = self.list_state.selected() {
             if let Some(entry) = self.entries.get(idx) {
                 let uri = entry.to_otpauth_uri();
-                match crate::utils::qrcode_util::render_to_terminal(&uri) {
+                match crate::utils::qrcode_util::render_qr(&uri, &self.config.qr_style) {
                     Ok(qr) => {
                         self.qr_lines = qr.lines().map(|l| l.to_string()).collect();
                         self.mode = Mode::ViewQR;
@@ -1466,6 +1478,7 @@ impl TuiApp {
                     9 => "auto-backup + yes",
                     10 => "restore defaults",
                     11 => "CLI: mfa lock / mfa unlock",
+                    12 => self.config.qr_style.as_str(),
                     _ => "",
                 };
                 Line::from(vec![
@@ -1733,6 +1746,7 @@ impl TuiApp {
             ("Clear all", "auto-backup + yes".into()),
             ("Reset config", "defaults".into()),
             ("Encryption", "mfa lock / mfa unlock".into()),
+            ("QR Style", self.config.qr_style.clone()),
             ("Close", "Esc".into()),
         ];
 
