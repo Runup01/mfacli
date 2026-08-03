@@ -12,7 +12,7 @@ pub fn generate(entry: &OtpEntry) -> Result<String, Box<dyn std::error::Error>> 
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     let counter = now / 30;
 
-    let secret = base32::decode(base32::Alphabet::Rfc4648 { padding: false }, &entry.secret)
+    let secret = base32::decode(base32::Alphabet::Rfc4648 { padding: false }, &entry.normalized_secret())
         .ok_or("Invalid base32 secret (allowed: A-Z and 2-7; common typos 0->O, 1->I, 8->B)")?;
 
     let counter_bytes = counter.to_be_bytes();

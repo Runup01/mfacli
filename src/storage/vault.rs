@@ -127,35 +127,53 @@ impl Vault {
     }
 
     pub fn add_entry(&mut self, entry: OtpEntry) -> Result<(), Box<dyn std::error::Error>> {
-        if self.entries.iter().any(|e| e.name == entry.name) {
-            return Err(format!("Entry '{}' already exists", entry.name).into());
+        if self
+            .entries
+            .iter()
+            .any(|e| e.name == entry.name && e.issuer == entry.issuer)
+        {
+            return Err(format!(
+                "Entry '{}' (issuer: {}) already exists",
+                entry.name,
+                entry.issuer.as_deref().unwrap_or("-")
+            )
+            .into());
         }
         self.entries.push(entry);
         Ok(())
     }
 
-    pub fn get_entry(&self, name: &str) -> Result<&OtpEntry, Box<dyn std::error::Error>> {
+    pub fn get_entry(
+        &self,
+        name: &str,
+        issuer: Option<&str>,
+    ) -> Result<&OtpEntry, Box<dyn std::error::Error>> {
         self.entries
             .iter()
-            .find(|e| e.name == name)
+            .find(|e| e.name == name && e.issuer.as_deref() == issuer)
             .ok_or_else(|| format!("Entry '{}' not found", name).into())
     }
 
     pub fn get_entry_mut(
         &mut self,
         name: &str,
+        issuer: Option<&str>,
     ) -> Result<&mut OtpEntry, Box<dyn std::error::Error>> {
         self.entries
             .iter_mut()
-            .find(|e| e.name == name)
+            .find(|e| e.name == name && e.issuer.as_deref() == issuer)
             .ok_or_else(|| format!("Entry '{}' not found", name).into())
     }
 
-    pub fn remove_entry(&mut self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn remove_entry(
+        &mut self,
+        name: &str,
+        issuer: Option<&str>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let idx = self
             .entries
             .iter()
-            .position(|e| e.name == name)
+            .position(|e| e.name == name && e.issuer.as_deref() == issuer)
             .ok_or_else(|| format!("Entry '{}' not found", name))?;
         self.entries.remove(idx);
         Ok(())
@@ -173,14 +191,23 @@ impl Vault {
 }
 
 impl Vault {
-    pub fn rename_entry(&mut self, old: &str, new: &str) -> Result<(), Box<dyn std::error::Error>> {
-        if self.entries.iter().any(|e| e.name == new) {
+    pub fn rename_entry(
+        &mut self,
+        old: &str,
+        old_issuer: Option<&str>,
+        new: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if self
+            .entries
+            .iter()
+            .any(|e| e.name == new && e.issuer.as_deref() == old_issuer)
+        {
             return Err(format!("Entry '{}' already exists", new).into());
         }
         let entry = self
             .entries
             .iter_mut()
-            .find(|e| e.name == old)
+            .find(|e| e.name == old && e.issuer.as_deref() == old_issuer)
             .ok_or_else(|| format!("Entry '{}' not found", old))?;
         entry.name = new.to_string();
         Ok(())

@@ -42,14 +42,22 @@ fn import_json(path: &str) -> Result<Vec<OtpEntry>, Box<dyn std::error::Error>> 
 
 /// Accept both the versioned native wrapper `{ "version", "entries" }` and a
 /// legacy bare array, so old exports and hand-written templates both load.
+/// Uppercase/strip base32 secrets so legacy lowercase data still generates codes.
+fn normalize_secrets(mut entries: Vec<OtpEntry>) -> Vec<OtpEntry> {
+    for e in entries.iter_mut() {
+        e.secret = e.normalized_secret();
+    }
+    entries
+}
+
 fn parse_entries_json(json: &str) -> Result<Vec<OtpEntry>, Box<dyn std::error::Error>> {
     let v: serde_json::Value = serde_json::from_str(json)?;
     match v {
         serde_json::Value::Object(mut map) => match map.remove("entries") {
-            Some(arr) => Ok(serde_json::from_value(arr)?),
+            Some(arr) => Ok(normalize_secrets(serde_json::from_value(arr)?)),
             None => Err("JSON object missing 'entries' array".into()),
         },
-        serde_json::Value::Array(_) => Ok(serde_json::from_value(v)?),
+        serde_json::Value::Array(_) => Ok(normalize_secrets(serde_json::from_value(v)?)),
         _ => Err("Expected a JSON array or { \"version\", \"entries\" } object".into()),
     }
 }

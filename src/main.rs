@@ -246,8 +246,8 @@ fn cmd_add(
 
 fn cmd_code(name: &str, copy: bool) -> Result<(), Box<dyn std::error::Error>> {
     let vault = storage::vault::Vault::load()?;
-    let resolved = resolve_name(&vault, name)?;
-    let entry = vault.get_entry(&resolved)?;
+    let (rn, ri) = resolve_target(&vault, name)?;
+    let entry = vault.get_entry(&rn, ri.as_deref())?;
     let code = otp::generate_code(entry)?;
 
     if copy {
@@ -261,8 +261,8 @@ fn cmd_code(name: &str, copy: bool) -> Result<(), Box<dyn std::error::Error>> {
 
 fn cmd_show(name: &str) -> Result<(), Box<dyn std::error::Error>> {
     let vault = storage::vault::Vault::load()?;
-    let resolved = resolve_name(&vault, name)?;
-    let entry = vault.get_entry(&resolved)?;
+    let (rn, ri) = resolve_target(&vault, name)?;
+    let entry = vault.get_entry(&rn, ri.as_deref())?;
 
     println!();
     println!("  {} {}", "Name:".bold(), entry.name);
@@ -510,7 +510,10 @@ fn cmd_list(limit: Option<usize>, show_all: bool) -> Result<(), Box<dyn std::err
 
     // ── Data rows ──
     for (idx, entry) in display_entries.iter().enumerate() {
-        let code = otp::generate_code(entry).unwrap_or_else(|_| "------".to_string());
+        let (code, code_ok) = match otp::generate_code(entry) {
+            Ok(c) => (c, true),
+            Err(_) => ("------".to_string(), false),
+        };
         let remaining = entry.period - (now % entry.period);
 
         let name_display = truncate_str(&entry.name, 36);
@@ -518,7 +521,9 @@ fn cmd_list(limit: Option<usize>, show_all: bool) -> Result<(), Box<dyn std::err
         let issuer_display = truncate_str(issuer_raw, 36);
 
         let code_padded = pad_to_width(&code, 12);
-        let code_style = if remaining <= 5 {
+        let code_style = if !code_ok {
+            code_padded.red().to_string()
+        } else if remaining <= 5 {
             code_padded.red().bold().to_string()
         } else {
             code_padded.green().bold().to_string()
@@ -595,19 +600,38 @@ fn sorted_entries(entries: &[storage::models::OtpEntry]) -> Vec<&storage::models
     sorted
 }
 
-/// Resolve `<name|index>`: exact name wins; otherwise the 1-based index shown by `mfa list`.
-fn resolve_name(
+/// Resolve `<name|index>` to a (name, issuer) identity.
+/// Exact unique name wins; ambiguous names must use the index; otherwise 1-based index.
+fn resolve_target(
     vault: &storage::vault::Vault,
     arg: &str,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> Result<(String, Option<String>), Box<dyn std::error::Error>> {
     let entries = vault.list_entries();
-    if let Some(e) = entries.iter().find(|e| e.name == arg) {
-        return Ok(e.name.clone());
+    let matches: Vec<&storage::models::OtpEntry> =
+        entries.iter().filter(|e| e.name == arg).collect();
+    if matches.len() == 1 {
+        return Ok((matches[0].name.clone(), matches[0].issuer.clone()));
+    }
+    if matches.len() > 1 {
+        let sorted = sorted_entries(entries);
+        let idxs: Vec<String> = sorted
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e.name == arg)
+            .map(|(i, _)| (i + 1).to_string())
+            .collect();
+        return Err(format!(
+            "Name '{}' matches {} entries (INDEX {}); use the index instead",
+            arg,
+            matches.len(),
+            idxs.join(", ")
+        )
+        .into());
     }
     if let Ok(idx) = arg.parse::<usize>() {
         let sorted = sorted_entries(entries);
         if (1..=sorted.len()).contains(&idx) {
-            return Ok(sorted[idx - 1].name.clone());
+            return Ok((sorted[idx - 1].name.clone(), sorted[idx - 1].issuer.clone()));
         }
         return Err(
             format!("Invalid index {} (valid: 1-{}, see `mfa list`)", idx, sorted.len()).into(),
@@ -628,10 +652,10 @@ fn arg_hint(cmd: &str) -> String {
 
 fn cmd_rename(old: &str, new: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut vault = storage::vault::Vault::load()?;
-    let resolved = resolve_name(&vault, old)?;
-    vault.rename_entry(&resolved, new)?;
+    let (rn, ri) = resolve_target(&vault, old)?;
+    vault.rename_entry(&rn, ri.as_deref(), new)?;
     vault.save()?;
-    println!("{} Renamed '{}' → '{}'", "✓".green(), resolved, new);
+    println!("{} Renamed '{}' → '{}'", "✓".green(), rn, new);
     Ok(())
 }
 
@@ -642,8 +666,9 @@ fn cmd_edit(
     issuer: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut vault = storage::vault::Vault::load()?;
-    let resolved = resolve_name(&vault, name)?;
-    let name = resolved.as_str();
+    let (rn, ri) = resolve_target(&vault, name)?;
+    let name = rn.as_str();
+    let issuer_q = ri.clone();
 
     if rename.is_none() && secret.is_none() && issuer.is_none() {
         // Note: secret = Some("") means user wants interactive prompt
@@ -651,7 +676,7 @@ fn cmd_edit(
     let want_secret_change = secret.is_some();
     if rename.is_none() && !want_secret_change && issuer.is_none() {
         // Show current entry info if no changes specified
-        let entry = vault.get_entry(name)?;
+        let entry = vault.get_entry(name, issuer_q.as_deref())?;
         println!();
         println!("  {} {}", "Name:".bold(), entry.name);
         println!(
@@ -671,14 +696,28 @@ fn cmd_edit(
         return Ok(());
     }
 
-    // Check rename validity before mutable borrow
+    // Check rename validity before mutable borrow (same-issuer identity)
     if let Some(new_name) = rename {
-        if vault.list_entries().iter().any(|e| e.name == new_name) {
+        let eff_issuer: Option<String> = match issuer {
+            Some(i) => {
+                if i.is_empty() {
+                    None
+                } else {
+                    Some(i.to_string())
+                }
+            }
+            None => ri.clone(),
+        };
+        if vault
+            .list_entries()
+            .iter()
+            .any(|e| e.name == new_name && e.issuer == eff_issuer)
+        {
             return Err(format!("Name '{}' already exists", new_name).into());
         }
     }
 
-    let entry = vault.get_entry_mut(name)?;
+    let entry = vault.get_entry_mut(name, issuer_q.as_deref())?;
 
     if let Some(new_name) = rename {
         entry.name = new_name.to_string();
@@ -717,13 +756,13 @@ fn cmd_remove(names: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut vault = storage::vault::Vault::load()?;
 
     // Resolve all targets first; abort entirely if any is invalid (no partial deletes)
-    let mut resolved: Vec<String> = Vec::new();
+    let mut resolved: Vec<(String, Option<String>)> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
     for arg in names {
-        match resolve_name(&vault, arg) {
-            Ok(n) => {
-                if !resolved.contains(&n) {
-                    resolved.push(n);
+        match resolve_target(&vault, arg) {
+            Ok(pair) => {
+                if !resolved.contains(&pair) {
+                    resolved.push(pair);
                 }
             }
             Err(e) => errors.push(e.to_string()),
@@ -733,18 +772,19 @@ fn cmd_remove(names: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         return Err(errors.join("; ").into());
     }
 
-    for name in &resolved {
-        vault.remove_entry(name)?;
+    for (n, i) in &resolved {
+        vault.remove_entry(n, i.as_deref())?;
     }
     vault.save()?;
+    let names_str: Vec<&str> = resolved.iter().map(|(n, _)| n.as_str()).collect();
     if resolved.len() == 1 {
-        println!("{} Removed '{}'", "✓".green(), resolved[0]);
+        println!("{} Removed '{}'", "✓".green(), names_str[0]);
     } else {
         println!(
             "{} Removed {} entries: {}",
             "✓".green(),
             resolved.len(),
-            resolved.join(", ")
+            names_str.join(", ")
         );
     }
     Ok(())
@@ -858,6 +898,12 @@ fn cmd_import(source: Option<&str>, path: &str) -> Result<(), Box<dyn std::error
     let mut added = 0usize;
     let mut renamed = 0usize;
     let mut skipped = 0usize;
+    // Snapshot identities that existed before this import, to explain rename reasons
+    let pre_existing: Vec<(String, Option<String>)> = vault
+        .list_entries()
+        .iter()
+        .map(|e| (e.name.clone(), e.issuer.clone()))
+        .collect();
 
     println!();
     println!("  {} Importing from {} ...", "→".cyan(), path);
@@ -865,24 +911,34 @@ fn cmd_import(source: Option<&str>, path: &str) -> Result<(), Box<dyn std::error
 
     for mut entry in entries {
         let original_name = entry.name.clone();
-        // Avoid name collisions: if the name already exists, append _2, _3, ...
-        if vault.list_entries().iter().any(|e| e.name == entry.name) {
+        // Identity = (name, issuer): same name with a different issuer is a distinct entry
+        if vault
+            .list_entries()
+            .iter()
+            .any(|e| e.name == entry.name && e.issuer == entry.issuer)
+        {
             let base = entry.name.clone();
             let mut n = 2u32;
             while vault
                 .list_entries()
                 .iter()
-                .any(|e| e.name == format!("{}_{}", base, n))
+                .any(|e| e.name == format!("{}_{}", base, n) && e.issuer == entry.issuer)
             {
                 n += 1;
             }
             entry.name = format!("{}_{}", base, n);
             renamed += 1;
+            let reason = if pre_existing.contains(&(original_name.clone(), entry.issuer.clone())) {
+                "renamed, already exists in vault"
+            } else {
+                "renamed, duplicate in import file"
+            };
             println!(
-                "  {} {} → {} (renamed, already exists)",
+                "  {} {} → {} ({})",
                 "⚠".yellow(),
                 original_name,
-                entry.name
+                entry.name,
+                reason
             );
         }
         match vault.add_entry(entry.clone()) {

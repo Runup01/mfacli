@@ -72,7 +72,12 @@ impl OtpEntry {
         let params: std::collections::HashMap<String, String> =
             parsed.query_pairs().into_owned().collect();
 
-        let secret = params.get("secret").ok_or("Missing secret in URI")?.clone();
+        // Providers sometimes emit lowercase/dashed base32; normalize like add/edit does
+        let secret = params
+            .get("secret")
+            .ok_or("Missing secret in URI")?
+            .replace([' ', '-'], "")
+            .to_uppercase();
         let algorithm = params
             .get("algorithm")
             .cloned()
@@ -118,6 +123,11 @@ impl OtpEntry {
     }
 
     #[allow(dead_code)]
+    /// Base32 is case-insensitive in the wild; canonical form is uppercased, separators stripped.
+    pub fn normalized_secret(&self) -> String {
+        self.secret.replace([' ', '-'], "").to_uppercase()
+    }
+
     pub fn to_otpauth_uri(&self) -> String {
         // Percent-encode label parts so round-trip (export -> import) stays
         // symmetric for names/issuers containing '@', ':', CJK, spaces, etc.

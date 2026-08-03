@@ -127,7 +127,7 @@ jobs:
         run: |
           mkdir -p pkg
           cp target/${{ matrix.target }}/release/mfa pkg/
-          cp README.md LICENSE pkg/
+          cp README.md LICENSE nfpm.yaml pkg/
 
       - name: Build .deb
         working-directory: pkg

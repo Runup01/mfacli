@@ -90,6 +90,9 @@ mfacli 按 `xclip → xsel → wl-copy` 顺序自动尝试。**纯 SSH 无图形
 **Q：导入支持哪些格式？**
 自动检测：`otpauth://` 列表、JSON、CSV、Google Authenticator 迁移文件。**`encrypted` 不自动检测**，须显式 `mfa import -s encrypted <file>`（防误把加密文件当文本解析）。
 
+**Q：名称可以重复吗？**
+身份 = (name, issuer)。同名不同 issuer 可共存（如 `work@GitHub` 与 `work@GitLab`）；同名多条时 CLI 用 index 寻址，TUI 用选择。同名**且**同 issuer 才算重复，导入时自动改名 `_2` 并说明原因。
+
 **Q：导入时名称重复会怎样？**
 自动重命名（如 `github_2`），**永不覆盖**已有条目；结束会汇报导入 / 跳过条数。
 

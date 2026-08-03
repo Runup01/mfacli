@@ -602,6 +602,22 @@ impl TuiApp {
         ) {
             Ok(entry) => {
                 let name = entry.name.clone();
+                if self
+                    .entries
+                    .iter()
+                    .any(|e| e.name == entry.name && e.issuer == entry.issuer)
+                {
+                    self.status_message = Some((
+                        format!(
+                            "'{}' (issuer: {}) already exists",
+                            entry.name,
+                            entry.issuer.as_deref().unwrap_or("-")
+                        ),
+                        StatusKind::Error,
+                    ));
+                    self.mode = Mode::Normal;
+                    return;
+                }
                 self.entries.push(entry);
                 self.save_vault();
                 self.list_state.select(Some(self.entries.len() - 1));
@@ -622,7 +638,12 @@ impl TuiApp {
     fn finish_rename(&mut self, new_name: &str) {
         if let Some(idx) = self.list_state.selected() {
             let old = self.entries[idx].name.clone();
-            if self.entries.iter().any(|e| e.name == new_name) {
+            let iss = self.entries[idx].issuer.clone();
+            if self
+                .entries
+                .iter()
+                .any(|e| e.name == new_name && e.issuer == iss)
+            {
                 self.status_message =
                     Some((format!("'{}' already exists", new_name), StatusKind::Error));
             } else {
@@ -692,7 +713,12 @@ impl TuiApp {
             return;
         }
         if let Some(idx) = self.list_state.selected() {
-            if self.entries.iter().any(|e| e.name == new_name) {
+            let iss = self.entries[idx].issuer.clone();
+            if self
+                .entries
+                .iter()
+                .any(|e| e.name == new_name && e.issuer == iss)
+            {
                 self.status_message =
                     Some((format!("'{}' already exists", new_name), StatusKind::Error));
             } else {
@@ -710,11 +736,26 @@ impl TuiApp {
 
     fn finish_edit_issuer(&mut self, new_issuer: &str) {
         if let Some(idx) = self.list_state.selected() {
-            self.entries[idx].issuer = if new_issuer.is_empty() {
+            let new_iss: Option<String> = if new_issuer.is_empty() {
                 None
             } else {
                 Some(new_issuer.to_string())
             };
+            let cur_name = self.entries[idx].name.clone();
+            if self
+                .entries
+                .iter()
+                .enumerate()
+                .any(|(i, e)| i != idx && e.name == cur_name && e.issuer == new_iss)
+            {
+                self.status_message = Some((
+                    format!("'{}' with this issuer already exists", cur_name),
+                    StatusKind::Error,
+                ));
+                self.mode = Mode::Normal;
+                return;
+            }
+            self.entries[idx].issuer = new_iss;
             self.save_vault();
             self.status_message = Some((
                 format!("Updated issuer for '{}'", self.entries[idx].name),
@@ -733,7 +774,11 @@ impl TuiApp {
             Ok(entries) => {
                 let count = entries.len();
                 for entry in entries {
-                    if !self.entries.iter().any(|e| e.name == entry.name) {
+                    if !self
+                        .entries
+                        .iter()
+                        .any(|e| e.name == entry.name && e.issuer == entry.issuer)
+                    {
                         self.entries.push(entry);
                     }
                 }
@@ -1058,14 +1103,17 @@ impl TuiApp {
             .enumerate()
             .map(|(idx, entry)| {
                 let sel = idx == selected;
-                let code = otp::generate_code(entry).unwrap_or_else(|_| "------".to_string());
+                let (code, code_ok) = match otp::generate_code(entry) {
+                    Ok(c) => (c, true),
+                    Err(_) => ("------".to_string(), false),
+                };
                 let remaining = entry.period - (now % entry.period);
                 let progress = remaining as f64 / entry.period as f64;
                 let bar_width = 10;
                 let filled = (progress * bar_width as f64) as usize;
                 let bar: String = "●".repeat(filled) + &"○".repeat(bar_width - filled);
 
-                let code_style = if remaining <= 5 {
+                let code_style = if !code_ok || remaining <= 5 {
                     Style::default()
                         .fg(Color::LightRed)
                         .add_modifier(Modifier::BOLD)

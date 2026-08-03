@@ -6,11 +6,11 @@
     </linearGradient>
   </defs>
   <g fill="url(#g)">
-    <ellipse cx="98" cy="126" rx="42" ry="31"/>
-    <circle cx="47" cy="84" r="17"/>
-    <circle cx="80" cy="61" r="17"/>
-    <circle cx="116" cy="61" r="17"/>
-    <circle cx="149" cy="84" r="17"/>
+    <ellipse cx="98" cy="136" rx="42" ry="31"/>
+    <circle cx="47" cy="94" r="17"/>
+    <circle cx="80" cy="71" r="17"/>
+    <circle cx="116" cy="71" r="17"/>
+    <circle cx="149" cy="94" r="17"/>
   </g>
-  <text x="196" y="141" textLength="540" lengthAdjust="spacingAndGlyphs" font-family="ui-rounded, 'SF Pro Rounded', 'Nunito', 'Segoe UI', Verdana, sans-serif" font-size="112" font-weight="800" fill="url(#g)">mfacli</text>
+  <text x="196" y="151" font-family="ui-rounded, 'SF Pro Rounded', 'Nunito', 'Segoe UI', Verdana, sans-serif" font-weight="800" letter-spacing="2"><tspan font-size="150" fill="url(#g)">m</tspan><tspan font-size="112" fill="none" stroke="#2DD4BF" stroke-width="6">f</tspan><tspan font-size="112" fill="url(#g)">a</tspan><tspan font-size="112" fill="none" stroke="#2DD4BF" stroke-width="6">c</tspan><tspan font-size="112" fill="url(#g)">l</tspan><tspan font-size="112" fill="none" stroke="#2DD4BF" stroke-width="6">i</tspan></text>
 </svg>
