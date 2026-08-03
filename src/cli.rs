@@ -61,7 +61,7 @@ pub enum Commands {
 
     /// Generate the current OTP code
     Code {
-        /// Name or list index (#) of the entry
+        /// Entry name or index (# column of `mfa list`)
         name: String,
 
         /// Copy code to clipboard
@@ -71,13 +71,13 @@ pub enum Commands {
 
     /// Copy OTP code to clipboard
     Copy {
-        /// Name or list index (#) of the entry
+        /// Entry name or index (# column of `mfa list`)
         name: String,
     },
 
     /// Show entry details: secret + QR code
     Show {
-        /// Name or list index (#) of the entry
+        /// Entry name or index (# column of `mfa list`)
         name: String,
     },
 
@@ -104,7 +104,7 @@ pub enum Commands {
 
     /// Rename an entry (shortcut for `edit <name> --rename <new>`)
     Rename {
-        /// Current name or list index (#)
+        /// Current entry name or index (# column of `mfa list`)
         old: String,
 
         /// New name
@@ -113,7 +113,7 @@ pub enum Commands {
 
     /// Edit an entry (name, secret, issuer)
     Edit {
-        /// Name or list index (#) of the entry to edit
+        /// Entry name or index (# column of `mfa list`)
         name: String,
 
         /// New name
@@ -131,7 +131,7 @@ pub enum Commands {
 
     /// Remove an entry
     Remove {
-        /// Name or list index (#) of the entry
+        /// Entry name or index (# column of `mfa list`)
         name: String,
     },
 

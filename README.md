@@ -75,6 +75,7 @@ mfa add github --issuer GitHub
 # 3) 取码 / 进 TUI
 mfa code github          # → 482916（纯 stdout，可管道）
 mfa copy github          # 复制到剪贴板
+mfa remove 2             # 名称或列表序号都能定位条目
 mfa tui                  # 交互式 TUI：双击复制 / 二维码 / 宠物
 ```
 

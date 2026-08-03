@@ -15,12 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Documentation restructure: README becomes a product landing page; detailed step-by-step guides moved to `docs/`
-- `<name|#>` addressing: `code` / `copy` / `show` / `edit` / `rename` / `remove` accept the list index as well as the name (exact name wins)
+- `<name|index>` addressing: `code` / `copy` / `show` / `edit` / `rename` / `remove` accept the list index as well as the name (exact name wins)
 - `cargo fmt` applied across the codebase
 
 ### Fixed
 - `mfa list` column layout no longer collapses with short or single entries (stable min widths: NAME≥16, ISSUER≥12)
-- `mfa list` header: `#` column now pads to index width (header/rows align); top info block wrapped in a light box with display-width-aligned inner `│` separators and emoji-aware column widths
+- `mfa list` header: `#` column now pads to index width (header/rows align); `mfa list` info header wrapped in a light box (aligned inner `│`, emoji-aware widths); token table keeps open horizontal rules
 - TUI: same stable min column widths; selection no longer shifts columns (fixed 2-cell `▸` lead + whole-row bold)
 
 ### Added

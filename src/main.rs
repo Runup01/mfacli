@@ -107,7 +107,7 @@ fn print_app_error(e: Box<dyn std::error::Error>) {
             "  {} 名字已存在：改名用 {}，或先 {} 再添加。",
             "提示:".cyan(),
             "mfa edit <name> --rename <new>".cyan(),
-            "mfa remove <name|#>".cyan()
+            arg_hint("remove")
         );
     } else if msg.to_lowercase().contains("base32") {
         eprintln!(
@@ -492,19 +492,19 @@ fn cmd_list(limit: Option<usize>, show_all: bool) -> Result<(), Box<dyn std::err
 
     let name_col = max_name_w.clamp(16, 36);
     let issuer_col = max_issuer_w.clamp(12, 36);
-    let total_w = 4 + name_col + 2 + issuer_col + 2 + 12 + 2 + 6;
+    let inner_w = 2 + 1 + name_col + 1 + issuer_col + 1 + 12 + 1 + 4;
 
-    // ── Table header ──
-    println!("  {}", "─".repeat(total_w).dimmed());
+    // ── Table header (open rules) ──
+    println!("  {}", "─".repeat(inner_w).dimmed());
     println!(
         "  {} {} {} {} {}",
         pad_to_width("#", 2).dimmed(),
         pad_to_width("NAME", name_col).blue().bold(),
         pad_to_width("ISSUER", issuer_col).magenta(),
         pad_to_width("CODE", 12).green().bold(),
-        "⏱".yellow(),
+        pad_to_width("⏱", 4).yellow(),
     );
-    println!("  {}", "─".repeat(total_w).dimmed());
+    println!("  {}", "─".repeat(inner_w).dimmed());
 
     // ── Data rows ──
     for (idx, entry) in display_entries.iter().enumerate() {
@@ -523,9 +523,9 @@ fn cmd_list(limit: Option<usize>, show_all: bool) -> Result<(), Box<dyn std::err
         };
 
         let timer = if remaining <= 5 {
-            format!("{}s", remaining).red().bold().to_string()
+            pad_to_width(&format!("{}s", remaining), 4).red().bold().to_string()
         } else {
-            format!("{}s", remaining).yellow().to_string()
+            pad_to_width(&format!("{}s", remaining), 4).yellow().to_string()
         };
 
         let num = format!("{:>2}", idx + 1);
@@ -539,7 +539,7 @@ fn cmd_list(limit: Option<usize>, show_all: bool) -> Result<(), Box<dyn std::err
         );
     }
 
-    println!("  {}", "─".repeat(total_w).dimmed());
+    println!("  {}", "─".repeat(inner_w).dimmed());
     if hidden_count > 0 {
         println!(
             "  {} ({} more, use {} to see all)",
@@ -551,8 +551,8 @@ fn cmd_list(limit: Option<usize>, show_all: bool) -> Result<(), Box<dyn std::err
     println!(
         "  {}  {}  {}  {}",
         "tip".dimmed(),
-        "mfa copy <name|#>".cyan(),
-        "mfa show <name|#>".cyan(),
+        arg_hint("copy"),
+        arg_hint("show"),
         "mfa tui".cyan(),
     );
     println!();
@@ -593,7 +593,7 @@ fn sorted_entries(entries: &[storage::models::OtpEntry]) -> Vec<&storage::models
     sorted
 }
 
-/// Resolve `<name|#>`: exact name wins; otherwise the 1-based index shown by `mfa list`.
+/// Resolve `<name|index>`: exact name wins; otherwise the 1-based index shown by `mfa list`.
 fn resolve_name(
     vault: &storage::vault::Vault,
     arg: &str,
@@ -612,6 +612,16 @@ fn resolve_name(
         );
     }
     Err(format!("Entry '{}' not found (see `mfa list`)", arg).into())
+}
+
+/// Styled `<name|index>` hint with the word highlighted for visibility.
+fn arg_hint(cmd: &str) -> String {
+    format!(
+        "{}{}{}",
+        format!("mfa {} <name|", cmd).cyan(),
+        "index".yellow().bold(),
+        ">".cyan()
+    )
 }
 
 fn cmd_rename(old: &str, new: &str) -> Result<(), Box<dyn std::error::Error>> {
