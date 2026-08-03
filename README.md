@@ -123,15 +123,15 @@ tar xzf mfacli-aarch64-apple-darwin.tar.gz && chmod +x mfa && sudo mv mfa /usr/l
 **🐧 Ubuntu / Debian（amd64）**
 
 ```bash
-curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.6/mfacli_0.1.6_amd64.deb
-sudo dpkg -i mfacli_0.1.6_amd64.deb
+curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.7/mfacli_0.1.7_amd64.deb
+sudo dpkg -i mfacli_0.1.7_amd64.deb
 ```
 
 **🎩 CentOS / Rocky / AlmaLinux（x86_64）**
 
 ```bash
-curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.6/mfacli-0.1.6-1.x86_64.rpm
-sudo rpm -i mfacli-0.1.6-1.x86_64.rpm
+curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.7/mfacli-0.1.7-1.x86_64.rpm
+sudo rpm -i mfacli-0.1.7-1.x86_64.rpm
 ```
 
 **🪟 Windows（PowerShell）**
