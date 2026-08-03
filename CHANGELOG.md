@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Small / low-resolution QR images now decode via 2x–4x upscale retry (Nearest + Triangle); previously failed with "no QR detected"
 - Confirmation prompts ignore stray backspace/delete characters (`yes` typed with corrections no longer mis-cancels)
+- TUI: long status messages (e.g. backup paths) are home-abbreviated + middle-truncated so the shortcut bar never gets pushed off-screen; `b` copies the last backup path to the clipboard
+- TUI: list shows the ADDED date column on wide terminals (matches CLI)
 
 ## [0.1.7] - 2026-08-03
 

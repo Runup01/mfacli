@@ -116,6 +116,50 @@ fn pad(s: &str, w: usize) -> String {
     }
 }
 
+/// First chars of `s` fitting in `max` display columns (no ellipsis).
+fn take_head(s: &str, max: usize) -> String {
+    let mut acc = 0;
+    let mut out = String::new();
+    for c in s.chars() {
+        let cw = tw(&c.to_string());
+        if acc + cw > max {
+            break;
+        }
+        out.push(c);
+        acc += cw;
+    }
+    out
+}
+
+/// Last chars of `s` fitting in `max` display columns (no ellipsis).
+fn take_tail(s: &str, max: usize) -> String {
+    let mut acc = 0;
+    let mut out = String::new();
+    for c in s.chars().rev() {
+        let cw = tw(&c.to_string());
+        if acc + cw > max {
+            break;
+        }
+        out.insert(0, c);
+        acc += cw;
+    }
+    out
+}
+
+/// Middle-truncate to <= `max` display columns: keeps head + "…" + tail
+/// (tail-priority, so file names survive).
+fn mid_trunc(s: &str, max: usize) -> String {
+    if tw(s) <= max {
+        return s.to_string();
+    }
+    if max <= 4 {
+        return take_tail(s, max);
+    }
+    let head_max = ((max - 1) / 3).min(20);
+    let tail_max = max - 1 - head_max;
+    format!("{}…{}", take_head(s, head_max), take_tail(s, tail_max))
+}
+
 #[derive(PartialEq)]
 enum Mode {
     Normal,
@@ -160,6 +204,8 @@ pub struct TuiApp {
     // Mouse double-click tracking
     last_click_time: Option<Instant>,
     list_area: Rect,
+    // Last backup file path (copyable via `b` in Normal mode)
+    last_backup_path: Option<String>,
 }
 
 enum StatusKind {
@@ -221,6 +267,7 @@ impl TuiApp {
             qr_lines: Vec::new(),
             last_click_time: None,
             list_area: Rect::default(),
+            last_backup_path: None,
         }
     }
 
@@ -404,6 +451,20 @@ impl TuiApp {
                 self.mode = Mode::Settings;
                 self.settings_cursor = 0;
             }
+            KeyCode::Char('b') => match &self.last_backup_path {
+                Some(p) => match clipboard::copy_to_clipboard(p) {
+                    Ok(()) => self.status_message = Some((
+                        "✓ 备份路径已复制，可粘贴".to_string(),
+                        StatusKind::Success,
+                    )),
+                    Err(e) => self.status_message =
+                        Some((format!("复制失败: {}", e), StatusKind::Error)),
+                },
+                None => self.status_message = Some((
+                    "暂无备份路径：s 设置 → Backup now / Clear all 后自动生成".to_string(),
+                    StatusKind::Info,
+                )),
+            },
             KeyCode::Home | KeyCode::Char('g') => {
                 if !self.entries.is_empty() {
                     self.list_state.select(Some(0));
@@ -515,6 +576,7 @@ impl TuiApp {
                     if let Ok(json) = serde_json::to_string_pretty(&self.entries) {
                         if std::fs::write(&p, json).is_ok() {
                             msg = format!("Cleared {} (backup: {})", n, p.display());
+                            self.last_backup_path = Some(p.to_string_lossy().to_string());
                         }
                     }
                 }
@@ -651,10 +713,13 @@ impl TuiApp {
                     Ok(p.display().to_string())
                 })();
                 match res {
-                    Ok(p) => self.status_message = Some((
-                        format!("Backup → {} (plain, keep safe)", p),
-                        StatusKind::Success,
-                    )),
+                    Ok(p) => {
+                        self.last_backup_path = Some(p.clone());
+                        self.status_message = Some((
+                            format!("Backup → {} (plain, keep safe)", p),
+                            StatusKind::Success,
+                        ))
+                    }
                     Err(e) => self.status_message =
                         Some((format!("Backup failed: {}", e), StatusKind::Error)),
                 }
@@ -1216,6 +1281,9 @@ impl TuiApp {
 
         let selected = self.list_state.selected().unwrap_or(0);
         let idx_w = 2.max(self.entries.len().to_string().len());
+        // Show ADDED date column only when the terminal is wide enough
+        let base_w = 2 + idx_w + 1 + name_col.saturating_sub(2) + 2 + issuer_col + 8 + 11 + 4;
+        let show_added = (area.width as usize) >= base_w + 13;
         let items: Vec<ListItem> = self
             .entries
             .iter()
@@ -1252,7 +1320,7 @@ impl TuiApp {
                     issuer_col,
                 );
 
-                let line = Line::from(vec![
+                let mut spans: Vec<Span> = vec![
                     Span::styled(
                         if sel { "▸ " } else { "  " },
                         Style::default().fg(Color::Yellow),
@@ -1289,9 +1357,20 @@ impl TuiApp {
                             Style::default().fg(Color::DarkGray)
                         },
                     ),
-                ]);
+                ];
+                if show_added {
+                    let date = entry
+                        .created_at
+                        .as_deref()
+                        .and_then(|d| d.get(..10))
+                        .unwrap_or("-");
+                    spans.push(Span::styled(
+                        format!("  {}", date),
+                        Style::default().fg(Color::DarkGray),
+                    ));
+                }
 
-                ListItem::new(line)
+                ListItem::new(Line::from(spans))
             })
             .collect();
 
@@ -1503,11 +1582,50 @@ impl TuiApp {
                     .unwrap_or_default();
 
                 {
+                    let key = |c: Color| Style::default().fg(c).add_modifier(Modifier::BOLD);
+                    let dim = Style::default().fg(Color::DarkGray);
+
+                    // Shortcut help (built first so its width reserves space)
+                    let mut help: Vec<(String, Style)> = vec![
+                        (" c".into(), key(Color::LightGreen)),
+                        (" 复制".into(), dim),
+                        ("  a".into(), key(Color::LightYellow)),
+                        (" 添加".into(), dim),
+                        ("  e".into(), key(Color::LightMagenta)),
+                        (" 编辑".into(), dim),
+                        ("  r".into(), key(Color::LightBlue)),
+                        (" 重命名".into(), dim),
+                        ("  v".into(), key(Color::LightCyan)),
+                        (" 二维码".into(), dim),
+                        ("  d".into(), key(Color::LightRed)),
+                        (" 删除".into(), dim),
+                        ("  s".into(), key(Color::Yellow)),
+                        (" 设置".into(), dim),
+                    ];
+                    if self.last_backup_path.is_some() {
+                        help.push(("  b".into(), key(Color::LightGreen)));
+                        help.push((" 备份路径".into(), dim));
+                    }
+                    help.push(("  q".into(), key(Color::Red)));
+                    help.push((" 退出".into(), dim));
+                    let help_w: usize = help.iter().map(|(t, _)| tw(t)).sum();
+
+                    let inner_w = area.width.saturating_sub(2) as usize;
                     let mut spans = Vec::new();
-                    // Status message or entry info
+                    // Status message (home-abbreviated + middle-truncated to fit)
+                    // or selected entry info
                     if !msg.is_empty() {
+                        let home = dirs::home_dir()
+                            .map(|h| h.to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        let short = if home.is_empty() {
+                            msg.clone()
+                        } else {
+                            msg.replace(&home, "~")
+                        };
+                        let short = mid_trunc(&short, inner_w.saturating_sub(help_w));
                         spans.push(Span::styled(" ● ", style));
-                        spans.push(Span::styled(format!("{}  ", msg), style));
+                        spans.push(Span::styled(format!("{}  ", short), style));
                     } else if let Some(idx) = self.list_state.selected() {
                         if let Some(entry) = self.entries.get(idx) {
                             spans.push(Span::styled(" ", Style::default()));
@@ -1538,67 +1656,9 @@ impl TuiApp {
                             spans.push(Span::styled("  ", Style::default()));
                         }
                     }
-                    // Shortcuts always visible
-                    spans.push(Span::styled(
-                        " c",
-                        Style::default()
-                            .fg(Color::LightGreen)
-                            .add_modifier(Modifier::BOLD),
-                    ));
-                    spans.push(Span::styled(" 复制", Style::default().fg(Color::DarkGray)));
-                    spans.push(Span::styled(
-                        "  a",
-                        Style::default()
-                            .fg(Color::LightYellow)
-                            .add_modifier(Modifier::BOLD),
-                    ));
-                    spans.push(Span::styled(" 添加", Style::default().fg(Color::DarkGray)));
-                    spans.push(Span::styled(
-                        "  e",
-                        Style::default()
-                            .fg(Color::LightMagenta)
-                            .add_modifier(Modifier::BOLD),
-                    ));
-                    spans.push(Span::styled(" 编辑", Style::default().fg(Color::DarkGray)));
-                    spans.push(Span::styled(
-                        "  r",
-                        Style::default()
-                            .fg(Color::LightBlue)
-                            .add_modifier(Modifier::BOLD),
-                    ));
-                    spans.push(Span::styled(
-                        " 重命名",
-                        Style::default().fg(Color::DarkGray),
-                    ));
-                    spans.push(Span::styled(
-                        "  v",
-                        Style::default()
-                            .fg(Color::LightCyan)
-                            .add_modifier(Modifier::BOLD),
-                    ));
-                    spans.push(Span::styled(
-                        " 二维码",
-                        Style::default().fg(Color::DarkGray),
-                    ));
-                    spans.push(Span::styled(
-                        "  d",
-                        Style::default()
-                            .fg(Color::LightRed)
-                            .add_modifier(Modifier::BOLD),
-                    ));
-                    spans.push(Span::styled(" 删除", Style::default().fg(Color::DarkGray)));
-                    spans.push(Span::styled(
-                        "  s",
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD),
-                    ));
-                    spans.push(Span::styled(" 设置", Style::default().fg(Color::DarkGray)));
-                    spans.push(Span::styled(
-                        "  q",
-                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-                    ));
-                    spans.push(Span::styled(" 退出", Style::default().fg(Color::DarkGray)));
+                    for (t, st) in help {
+                        spans.push(Span::styled(t, st));
+                    }
                     Line::from(spans)
                 }
             }
