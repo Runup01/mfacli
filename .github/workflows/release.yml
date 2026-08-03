@@ -14,6 +14,9 @@ env:
 jobs:
   # ── Binary builds (tarball / zip) ─────────────────────────────
   build:
+    concurrency:
+      group: release-upload-${{ github.ref }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:
@@ -83,13 +86,18 @@ jobs:
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
+        continue-on-error: true
         with:
           files: ${{ matrix.archive }}
+          draft: true
 
   # ── Linux packages (DEB + RPM) ────────────────────────────────
   package-linux:
     needs: build
     runs-on: ubuntu-latest
+    concurrency:
+      group: release-upload-${{ github.ref }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:
@@ -163,20 +171,42 @@ jobs:
 
       - name: Upload DEB
         uses: softprops/action-gh-release@v2
+        continue-on-error: true
         with:
           files: mfacli_${{ steps.ver.outputs.version }}_${{ matrix.arch }}.deb
+          draft: true
 
       - name: Upload RPM
         uses: softprops/action-gh-release@v2
+        continue-on-error: true
         with:
           files: mfacli-${{ steps.ver.outputs.version }}-1.${{ matrix.rpm_arch }}.rpm
+          draft: true
 
   # ── Release notes (single job, no duplication) ────────────────
   release-notes:
     needs: [build, package-linux]
     runs-on: ubuntu-latest
     steps:
-      - uses: softprops/action-gh-release@v2
+      - name: Publish release (single writer)
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
+          draft: false
           generate_release_notes: true
+      - name: Retry publish if raced
+        if: failure()
+        run: |
+          for i in 1 2 3 4 5; do
+            sleep 15
+            STATE=$(gh api "repos/${{ github.repository }}/releases/tags/${{ github.ref_name }}" --jq '.draft' 2>/dev/null || echo missing)
+            echo "attempt $i: draft=$STATE"
+            if [ "$STATE" = "false" ]; then echo "release published"; exit 0; fi
+            if [ "$STATE" = "true" ]; then
+              gh api -X PATCH "repos/${{ github.repository }}/releases/tags/${{ github.ref_name }}" -f draft=false && { echo "published"; exit 0; }
+            fi
+          done
+          echo "release not found or still draft after retries"
+          exit 1
+        env:
+          GH_TOKEN: ${{ github.token }}
