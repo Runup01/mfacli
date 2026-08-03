@@ -1,6 +1,6 @@
 # 安装指南 / Installation
 
-mfacli 是**静态编译的单文件**，安装 = 把 `mfa` 二进制放进 `PATH`。无运行时、无依赖库。当前版本 **0.1.9**。
+mfacli 是**静态编译的单文件**，安装 = 把 `mfa` 二进制放进 `PATH`。无运行时、无依赖库。当前版本 **0.1.10**。
 
 ## 方式一：下载预编译包（推荐）
 
@@ -53,17 +53,17 @@ sudo install -m 755 mfacli-aarch64-unknown-linux-musl/mfa /usr/local/bin/
 ### Debian / Ubuntu（.deb）
 
 ```bash
-curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.9/mfacli_0.1.9_amd64.deb
-sudo dpkg -i mfacli_0.1.9_amd64.deb
-# 或 apt 自动处理依赖：sudo apt install -y ./mfacli_0.1.9_amd64.deb
+curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.10/mfacli_0.1.10_amd64.deb
+sudo dpkg -i mfacli_0.1.10_amd64.deb
+# 或 apt 自动处理依赖：sudo apt install -y ./mfacli_0.1.10_amd64.deb
 ```
 
 ### CentOS / Rocky / AlmaLinux（.rpm）
 
 ```bash
-curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.9/mfacli-0.1.9-1.x86_64.rpm
-sudo rpm -i mfacli-0.1.9-1.x86_64.rpm
-# 升级用：sudo rpm -U mfacli-0.1.9-1.x86_64.rpm
+curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.10/mfacli-0.1.10-1.x86_64.rpm
+sudo rpm -i mfacli-0.1.10-1.x86_64.rpm
+# 升级用：sudo rpm -U mfacli-0.1.10-1.x86_64.rpm
 ```
 
 ### Windows
@@ -134,7 +134,7 @@ certutil -hashfile <file> SHA256                   # Windows
 ## 验证安装
 
 ```bash
-mfa --version   # → mfa 0.1.9
+mfa --version   # → mfa 0.1.10
 mfa --help      # 全部子命令
 ```
 

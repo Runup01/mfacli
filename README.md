@@ -140,15 +140,15 @@ sudo install -m 755 mfacli-aarch64-unknown-linux-musl/mfa /usr/local/bin/
 **🐧 Ubuntu / Debian（amd64，偏好包管理）**
 
 ```bash
-curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.9/mfacli_0.1.9_amd64.deb
-sudo dpkg -i mfacli_0.1.9_amd64.deb
+curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.10/mfacli_0.1.10_amd64.deb
+sudo dpkg -i mfacli_0.1.10_amd64.deb
 ```
 
 **🎩 CentOS / Rocky / AlmaLinux（x86_64，偏好包管理）**
 
 ```bash
-curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.9/mfacli-0.1.9-1.x86_64.rpm
-sudo rpm -i mfacli-0.1.9-1.x86_64.rpm
+curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.10/mfacli-0.1.10-1.x86_64.rpm
+sudo rpm -i mfacli-0.1.10-1.x86_64.rpm
 ```
 
 **🪟 Windows（PowerShell）**

@@ -189,7 +189,16 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             keychain,
             qr_style,
             reset,
-        }) => cmd_config(pet, city, show_weather, show_bazi, show_pet, keychain, qr_style, reset),
+        }) => cmd_config(ConfigOpts {
+            pet,
+            city,
+            show_weather,
+            show_bazi,
+            show_pet,
+            keychain,
+            qr_style,
+            reset,
+        }),
     }
 }
 
@@ -1427,7 +1436,7 @@ fn cmd_import(source: Option<&str>, path: &str, conflict: &str) -> Result<(), Bo
     Ok(())
 }
 
-fn cmd_config(
+struct ConfigOpts {
     pet: Option<String>,
     city: Option<String>,
     show_weather: Option<bool>,
@@ -1436,11 +1445,13 @@ fn cmd_config(
     keychain: Option<bool>,
     qr_style: Option<String>,
     reset: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+}
+
+fn cmd_config(o: ConfigOpts) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = config::Config::load();
     let mut changed = false;
 
-    if reset {
+    if o.reset {
         config = config::Config::default();
         let _ = keychain::delete();
         println!(
@@ -1450,37 +1461,37 @@ fn cmd_config(
         changed = true;
     }
 
-    if let Some(v) = &qr_style {
+    if let Some(v) = &o.qr_style {
         config.qr_style = v.clone();
         println!("{} QR style: {}", "✓".green(), v);
         changed = true;
     }
 
-    if let Some(p) = &pet {
+    if let Some(p) = &o.pet {
         config.set_pet(p)?;
         println!("{} Pet set to '{}'", "✓".green(), p);
         changed = true;
     }
 
-    if let Some(c) = &city {
+    if let Some(c) = &o.city {
         config.city = Some(c.clone());
         println!("{} City set to '{}'", "✓".green(), c);
         changed = true;
     }
 
-    if let Some(v) = show_weather {
+    if let Some(v) = o.show_weather {
         config.show_weather = v;
         println!("{} Weather: {}", "✓".green(), if v { "on" } else { "off" });
         changed = true;
     }
 
-    if let Some(v) = show_bazi {
+    if let Some(v) = o.show_bazi {
         config.show_bazi = v;
         println!("{} BaZi: {}", "✓".green(), if v { "on" } else { "off" });
         changed = true;
     }
 
-    if let Some(v) = show_pet {
+    if let Some(v) = o.show_pet {
         config.show_pet = v;
         println!(
             "{} Pet display: {}",
@@ -1490,7 +1501,7 @@ fn cmd_config(
         changed = true;
     }
 
-    if let Some(v) = keychain {
+    if let Some(v) = o.keychain {
         config.keychain = v;
         if !v {
             let _ = keychain::delete();
@@ -1550,6 +1561,11 @@ fn cmd_config(
             } else {
                 "OFF".red().to_string()
             }
+        );
+        println!(
+            "  {} {}",
+            "QR Style:".bold(),
+            config.qr_style.cyan()
         );
         println!(
             "  {} {}",
