@@ -106,19 +106,47 @@
 
 ## 🚀 快速开始
 
+### 1) 安装
+
+**🍎 macOS（Apple Silicon）**
+
 ```bash
-# 1) 安装 — macOS Apple Silicon 示例（全平台见 docs/install.md）
 curl -LO https://github.com/Runup01/mfacli/releases/latest/download/mfacli-aarch64-apple-darwin.tar.gz
 tar xzf mfacli-aarch64-apple-darwin.tar.gz && chmod +x mfa && sudo mv mfa /usr/local/bin/
+```
 
-# 2) 添加第一个条目（密钥隐藏输入，不进 shell 历史）
-mfa add github --issuer GitHub
+**🐧 Ubuntu / Debian（amd64）**
 
-# 3) 取码 / 进 TUI
-mfa code github          # → 482916（纯 stdout，可管道）
-mfa copy github          # 复制到剪贴板
-mfa remove 2             # 名称或列表序号都能定位条目
-mfa tui                  # 交互式 TUI：双击复制 / 二维码 / 宠物
+```bash
+curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.5/mfacli_0.1.5_amd64.deb
+sudo dpkg -i mfacli_0.1.5_amd64.deb
+```
+
+**🎩 CentOS / Rocky / AlmaLinux（x86_64）**
+
+```bash
+curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.5/mfacli-0.1.5-1.x86_64.rpm
+sudo rpm -i mfacli-0.1.5-1.x86_64.rpm
+```
+
+**🪟 Windows（PowerShell）**
+
+```powershell
+Invoke-WebRequest https://github.com/Runup01/mfacli/releases/latest/download/mfacli-x86_64-pc-windows-msvc.zip -OutFile mfacli.zip
+Expand-Archive mfacli.zip C:\tools\mfacli
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\tools\mfacli", "User")  # 重开终端生效
+```
+
+> Intel Mac / ARM64 Linux / 校验和 / 源码编译 → [docs/install.md](docs/install.md)
+
+### 2) 使用
+
+```bash
+mfa add github --issuer GitHub   # 添加条目（密钥隐藏输入，不进历史）
+mfa code github                  # → 482916（纯 stdout，可管道）
+mfa copy github                  # 复制到剪贴板
+mfa remove 2                     # 名称或列表序号都能定位条目
+mfa tui                          # 交互式 TUI：双击复制 / 二维码 / 宠物
 ```
 
 ## 📚 文档
