@@ -100,16 +100,50 @@ impl Vault {
         Ok(vault)
     }
 
-    /// Get password from env var or interactive prompt
+    /// Get password: env var → 系统钥匙串 (opt-in) → 交互式输入
     fn get_password() -> Result<String, Box<dyn std::error::Error>> {
         if let Ok(pw) = std::env::var("MFA_PASSWORD") {
             return Ok(pw);
+        }
+        if crate::keychain::enabled() {
+            if let Some(pw) = crate::keychain::fetch() {
+                if Self::keychain_pw_valid(&pw) {
+                    return Ok(pw);
+                }
+                let _ = crate::keychain::delete();
+                eprintln!(
+                    "  ⚠ 钥匙串中存的密码与当前 vault 不匹配（可能改过锁密码），已删除，请手动输入"
+                );
+            }
         }
         let password = rpassword::prompt_password("Vault password: ")?;
         if password.is_empty() {
             return Err("Password cannot be empty".into());
         }
+        if crate::keychain::enabled() {
+            match crate::keychain::store(&password) {
+                Ok(()) => eprintln!(
+                    "  ✓ 密码已存入 {}，本机后续免输入 (关闭: mfa config --keychain off；单次绕过: --no-keychain)",
+                    crate::keychain::backend_name()
+                ),
+                Err(e) => eprintln!("  ⚠ 无法写入 {} ({})，本次仍用密码模式", crate::keychain::backend_name(), e),
+            }
+        }
         Ok(password)
+    }
+
+    /// 用 vault.enc 校验钥匙串取回的密码；无加密库时视为有效
+    fn keychain_pw_valid(pw: &str) -> bool {
+        let dir = match Self::vault_dir() {
+            Ok(d) => d,
+            Err(_) => return true,
+        };
+        let enc = dir.join("vault.enc");
+        let data = match std::fs::read_to_string(&enc) {
+            Ok(d) => d,
+            Err(_) => return true,
+        };
+        crate::crypto::encryption::decrypt(&data, pw).is_ok()
     }
 
     /// Set file permissions to 600 (owner read/write only)

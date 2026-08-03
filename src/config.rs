@@ -13,6 +13,8 @@ pub struct Config {
     pub show_bazi: bool,
     #[serde(default = "default_true")]
     pub show_pet: bool,
+    #[serde(default)]
+    pub keychain: bool,
 }
 
 fn default_pet() -> String {
@@ -31,6 +33,7 @@ impl Default for Config {
             show_weather: true,
             show_bazi: true,
             show_pet: true,
+            keychain: false,
         }
     }
 }

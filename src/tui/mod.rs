@@ -7,7 +7,7 @@ use crate::storage::vault::Vault;
 use crate::utils::clipboard;
 use crate::weather;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind},
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     event::{DisableMouseCapture, EnableMouseCapture},
     event::{MouseButton, MouseEventKind},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -167,7 +167,7 @@ enum StatusKind {
     Info,
 }
 
-const SETTINGS_ITEMS: [&str; 9] = [
+const SETTINGS_ITEMS: [&str; 10] = [
     "Pet Style",
     "Toggle Weather",
     "Toggle BaZi",
@@ -175,6 +175,7 @@ const SETTINGS_ITEMS: [&str; 9] = [
     "Set City",
     "Import (otpauth:// file)",
     "Export (encrypted backup)",
+    "Toggle Keychain (passwordless)",
     "Toggle Encryption",
     "Close Settings",
 ];
@@ -255,7 +256,17 @@ impl TuiApp {
                 match event::read()? {
                     Event::Key(key) => {
                         if key.kind == KeyEventKind::Press {
-                            self.handle_key(key.code);
+                            if matches!(self.mode, Mode::Normal)
+                                && key.modifiers.contains(KeyModifiers::CONTROL)
+                            {
+                                match key.code {
+                                    KeyCode::Char('u') => self.move_page(-1),
+                                    KeyCode::Char('d') => self.move_page(1),
+                                    _ => self.handle_key(key.code),
+                                }
+                            } else {
+                                self.handle_key(key.code);
+                            }
                         }
                     }
                     Event::Mouse(mouse)
@@ -351,6 +362,8 @@ impl TuiApp {
             KeyCode::Char('c') | KeyCode::Enter => self.copy_selected(),
             KeyCode::Up | KeyCode::Char('k') => self.move_up(),
             KeyCode::Down | KeyCode::Char('j') => self.move_down(),
+            KeyCode::PageUp => self.move_page(-1),
+            KeyCode::PageDown => self.move_page(1),
             KeyCode::Char('a') => {
                 self.mode = Mode::AddName;
                 self.input_buffer.clear();
@@ -572,13 +585,28 @@ impl TuiApp {
                 self.status_message = Some(("Export file path:".to_string(), StatusKind::Info));
             }
             7 => {
+                // Toggle keychain passwordless
+                self.config.keychain = !self.config.keychain;
+                if !self.config.keychain {
+                    let _ = crate::keychain::delete();
+                }
+                self.status_message = Some((
+                    format!(
+                        "Keychain passwordless: {} ({})",
+                        if self.config.keychain { "ON" } else { "OFF" },
+                        crate::keychain::backend_name()
+                    ),
+                    StatusKind::Success,
+                ));
+            }
+            8 => {
                 // Toggle encryption info
                 self.status_message = Some((
                     "Use CLI: mfa lock / mfa unlock (requires password setup)".to_string(),
                     StatusKind::Info,
                 ));
             }
-            8 => {
+            9 => {
                 self.mode = Mode::Normal;
                 let _ = self.config.save();
             }
@@ -930,6 +958,16 @@ impl TuiApp {
         self.list_state.select(Some(prev));
     }
 
+    fn move_page(&mut self, dir: i32) {
+        if self.entries.is_empty() {
+            return;
+        }
+        let page = 10.min(self.entries.len()) as i32;
+        let cur = self.list_state.selected().unwrap_or(0) as i32;
+        let next = (cur + dir * page).clamp(0, self.entries.len() as i32 - 1);
+        self.list_state.select(Some(next as usize));
+    }
+
     fn move_down(&mut self) {
         if self.entries.is_empty() {
             return;
@@ -1250,7 +1288,14 @@ impl TuiApp {
                     4 => self.config.city.as_deref().unwrap_or("Auto (IP)"),
                     5 => "enter file path",
                     6 => "enter file path",
-                    7 => "CLI: mfa lock / mfa unlock",
+                    7 => {
+                        if self.config.keychain {
+                            "ON"
+                        } else {
+                            "OFF"
+                        }
+                    }
+                    8 => "CLI: mfa lock / mfa unlock",
                     _ => "",
                 };
                 Line::from(vec![
@@ -1512,6 +1557,14 @@ impl TuiApp {
             ),
             ("Import", "enter path →".into()),
             ("Export", "enter path →".into()),
+            (
+                "Keychain",
+                if self.config.keychain {
+                    "ON".into()
+                } else {
+                    "OFF".into()
+                },
+            ),
             ("Encryption", "mfa lock / mfa unlock".into()),
             ("Close", "Esc".into()),
         ];

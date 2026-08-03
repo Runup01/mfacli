@@ -8,6 +8,7 @@ mod cli;
 mod config;
 mod crypto;
 mod import;
+mod keychain;
 mod otp;
 mod pet;
 mod storage;
@@ -122,6 +123,9 @@ fn print_app_error(e: Box<dyn std::error::Error>) {
 }
 
 fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
+    if cli.no_keychain {
+        std::env::set_var("MFA_NO_KEYCHAIN", "1");
+    }
     match cli.command {
         None => cmd_list(None, false),
         Some(Commands::Tui) => cmd_tui(),
@@ -169,7 +173,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             show_weather,
             show_bazi,
             show_pet,
-        }) => cmd_config(pet, city, show_weather, show_bazi, show_pet),
+            keychain,
+        }) => cmd_config(pet, city, show_weather, show_bazi, show_pet, keychain),
     }
 }
 
@@ -980,6 +985,7 @@ fn cmd_config(
     show_weather: Option<bool>,
     show_bazi: Option<bool>,
     show_pet: Option<bool>,
+    keychain: Option<bool>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = config::Config::load();
     let mut changed = false;
@@ -1015,6 +1021,27 @@ fn cmd_config(
             "✓".green(),
             if v { "on" } else { "off" }
         );
+        changed = true;
+    }
+
+    if let Some(v) = keychain {
+        config.keychain = v;
+        if !v {
+            let _ = keychain::delete();
+        }
+        println!(
+            "{} 本机免密 ({}): {}",
+            "✓".green(),
+            keychain::backend_name(),
+            if v { "on" } else { "off" }
+        );
+        if v {
+            println!(
+                "  {} 下次输入密码后自动托管到系统钥匙串；单次绕过: {}；off 即清除托管密码",
+                "→".yellow(),
+                "mfa --no-keychain list".cyan()
+            );
+        }
         changed = true;
     }
 
@@ -1054,6 +1081,15 @@ fn cmd_config(
             "Pet Display:".bold(),
             if config.show_pet {
                 "ON".green().to_string()
+            } else {
+                "OFF".red().to_string()
+            }
+        );
+        println!(
+            "  {} {}",
+            "Keychain:".bold(),
+            if config.keychain {
+                format!("ON ({})", keychain::backend_name()).green().to_string()
             } else {
                 "OFF".red().to_string()
             }
@@ -1157,6 +1193,25 @@ fn cmd_lock(backup: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     // 3) 加密迁移
     storage::vault::Vault::write_encrypted(&entries, &pw1)?;
     storage::vault::Vault::delete_plain()?;
+
+    // 4) 免密已开启则顺带托管新密码
+    if config::Config::load().keychain {
+        match keychain::store(&pw1) {
+            Ok(()) => println!(
+                "  {} 密码已同步存入 {}，后续免输入",
+                "✓".green(),
+                keychain::backend_name()
+            ),
+            Err(e) => println!("  {} 钥匙串写入失败: {}", "⚠".yellow(), e),
+        }
+    } else {
+        println!(
+            "  {} 想本机免输密码: {} (密码存入 {}，vault 文件被偷也打不开)",
+            "→".yellow(),
+            "mfa config --keychain on".cyan(),
+            keychain::backend_name()
+        );
+    }
 
     println!();
     println!("  {} {}", "✓".green(), "应用锁已启用".bold());

@@ -121,6 +121,9 @@ mfa import -s encrypted backup.enc
 | `--show-weather` | true/false | 天气开关 |
 | `--show-bazi` | true/false | 黄历开关 |
 | `--show-pet` | true/false | 宠物开关 |
+| `--keychain` | true/false | 本机免密：vault 密码托管到系统钥匙串 |
+
+全局参数 `--no-keychain`：本次命令绕过免密、强制手动输密码（如 `mfa --no-keychain list`）。
 
 ```bash
 mfa config                      # 查看（含加密状态）
@@ -130,11 +133,37 @@ mfa config --pet dino --show-weather false
 ### `mfa tui`
 交互式 TUI。
 
+## 本机免密（Keychain / DPAPI）
+
+应用锁启用后每次都要输密码；打开此开关，密码托管到操作系统级机密存储，**第二次起零输入**：
+
+| 系统 | 存储后端 |
+|------|------|
+| macOS | 登录 Keychain（`/usr/bin/security`） |
+| Windows | DPAPI（CurrentUser 作用域，blob 在 `%LOCALAPPDATA%\mfacli\key.dpapi`） |
+| Linux | Secret Service（`secret-tool`；无头/无 dbus 环境自动降级回密码输入） |
+
+```bash
+mfa config --keychain on     # 开启
+mfa list                     # 第一次输密码 → 自动托管，之后免输入
+mfa tui                      # 直接进，不再问密码
+mfa --no-keychain list       # 单次绕过，强制手输
+mfa config --keychain off    # 关闭并清除托管密码
+```
+
+TUI 里按 `s` 设置弹窗中也有 **Keychain** 项可切换。
+
+**安全模型（必读）**：
+- 防的是「**文件被偷**」：vault.enc 仍是 AES-256-GCM 加密，密码绑定你的 OS 登录会话，文件拷走也打不开。
+- 不防「**同机恶意软件**」：同用户进程理论上能读钥匙串（`gh` / `aws cli` 同假设）。公共电脑请保持 off。
+- 默认 **opt-in**（off）；改过锁密码导致与钥匙串不匹配时，mfa 自动删除旧托管并回退手动输入。
+
 ## TUI 快捷键
 
 | 键 | 功能 | 键 | 功能 |
 |---|---|---|---|
-| `↑↓`/`jk` | 导航 | `a` | 添加 |
+| `↑↓`/`jk` | 导航 | `PgUp`/`PgDn` · `Ctrl+U/D` | 翻页（10 行/页） |
+| `g`/`Home` · `G`/`End` | 跳首 / 跳尾 | `a` | 添加 |
 | `c`/`Enter` | 复制 | `e` | 编辑 |
 | 🖱 双击 | 复制 | `r` | 重命名 |
 | `v` | 二维码 | `d` | 删除 |
@@ -177,6 +206,7 @@ mfa unlock                                  # 解密回明文
 | 变量 | 说明 |
 |------|------|
 | `MFA_PASSWORD` | 加密 vault 解锁密码（跳过交互，适用脚本/CI）。`lock` 设密码时不读它 |
+| `MFA_NO_KEYCHAIN` | 设为任意值 = 本次绕过钥匙串免密（等同 `--no-keychain`） |
 
 ```bash
 MFA_PASSWORD="xxx" mfa code github          # 内联（最安全，不进 history）

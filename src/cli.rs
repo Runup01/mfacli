@@ -7,8 +7,20 @@ use clap::{Parser, Subcommand};
     about = "A developer-friendly CLI MFA/OTP manager"
 )]
 pub struct Cli {
+    /// 本次绕过本机免密，强制手动输入密码
+    #[arg(long, global = true)]
+    pub no_keychain: bool,
+
     #[command(subcommand)]
     pub command: Option<Commands>,
+}
+
+fn parse_on_off(s: &str) -> Result<bool, String> {
+    match s.to_lowercase().as_str() {
+        "on" | "true" | "yes" => Ok(true),
+        "off" | "false" | "no" => Ok(false),
+        other => Err(format!("expected on/off (or true/false), got '{other}'")),
+    }
 }
 
 #[derive(Subcommand)]
@@ -178,5 +190,9 @@ pub enum Commands {
         /// Toggle pet display
         #[arg(long)]
         show_pet: Option<bool>,
+
+        /// 本机免密：vault 密码托管到系统钥匙串 (macOS Keychain / Windows DPAPI / Linux Secret Service)
+        #[arg(long, value_parser = parse_on_off)]
+        keychain: Option<bool>,
     },
 }

@@ -47,18 +47,20 @@ jobs:
       - name: Install musl toolchain (Linux static)
         if: runner.os == 'Linux' && contains(matrix.target, 'linux-musl')
         run: |
-          sudo apt-get update
           if [ "${{ matrix.target }}" = "x86_64-unknown-linux-musl" ]; then
+            sudo apt-get update
             sudo apt-get install -y musl-tools
           else
-            curl -sfL https://musl.cc/aarch64-linux-musl-cross.tgz | tar xz -C /opt
-            echo "/opt/aarch64-linux-musl-cross/bin" >> "$GITHUB_PATH"
+            # musl libc ships with rust-std; use bundled rust-lld as cross linker (no downloads)
+            SYSROOT=$(rustc --print sysroot)
+            sudo ln -sf "$SYSROOT/lib/rustlib/x86_64-unknown-linux-gnu/bin/rust-lld" /usr/local/bin/ld.lld
           fi
 
       - name: Build
         env:
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: aarch64-linux-musl-gcc
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: ld.lld
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: -C linker-flavor=ld.lld
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Package (Unix)
@@ -110,18 +112,20 @@ jobs:
       - name: Install musl toolchain (Linux static)
         if: runner.os == 'Linux' && contains(matrix.target, 'linux-musl')
         run: |
-          sudo apt-get update
           if [ "${{ matrix.target }}" = "x86_64-unknown-linux-musl" ]; then
+            sudo apt-get update
             sudo apt-get install -y musl-tools
           else
-            curl -sfL https://musl.cc/aarch64-linux-musl-cross.tgz | tar xz -C /opt
-            echo "/opt/aarch64-linux-musl-cross/bin" >> "$GITHUB_PATH"
+            # musl libc ships with rust-std; use bundled rust-lld as cross linker (no downloads)
+            SYSROOT=$(rustc --print sysroot)
+            sudo ln -sf "$SYSROOT/lib/rustlib/x86_64-unknown-linux-gnu/bin/rust-lld" /usr/local/bin/ld.lld
           fi
 
       - name: Build binary
         env:
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: aarch64-linux-musl-gcc
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: ld.lld
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: -C linker-flavor=ld.lld
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Install nfpm
