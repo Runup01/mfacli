@@ -93,14 +93,19 @@ pub enum Commands {
         name: String,
     },
 
-    /// Scan a QR code image to add an entry
+    /// Scan QR image(s) to add entries (batch: multiple paths, dirs recursive)
     Scan {
-        /// Path to QR code image (PNG/JPG)
-        path: String,
+        /// QR image or directory paths (PNG/JPG/WebP; dirs scanned recursively)
+        #[arg(required = true)]
+        paths: Vec<String>,
 
-        /// Custom name for the entry
+        /// Custom name for the entry (single file only)
         #[arg(short, long)]
         name: Option<String>,
+
+        /// 过滤模式：仅导入 name/issuer 命中的条目 (支持 | 或、* 通配、^/$ 锚点，忽略大小写)
+        #[arg(short, long)]
+        filter: Option<String>,
     },
 
     /// List all entries with current codes
@@ -169,6 +174,20 @@ pub enum Commands {
         source: Option<String>,
     },
 
+    /// One-click backup (timestamped; encrypted vault stays encrypted)
+    Backup {
+        /// Output path (default: auto timestamped path in config dir)
+        #[arg(short, long)]
+        output: Option<String>,
+
+        /// Force plain-text escape-hatch backup
+        #[arg(long)]
+        plain: bool,
+    },
+
+    /// Wipe ALL entries (auto-backup first, then yes-confirm)
+    Clear,
+
     /// Configure TUI appearance (pet, weather, bazi)
     Config {
         /// Set pet style: robot, dino, cat, ghost, dragon
@@ -194,5 +213,9 @@ pub enum Commands {
         /// 本机免密：vault 密码托管到系统钥匙串 (macOS Keychain / Windows DPAPI / Linux Secret Service)
         #[arg(long, value_parser = parse_on_off)]
         keychain: Option<bool>,
+
+        /// 恢复所有设置为默认值
+        #[arg(long)]
+        reset: bool,
     },
 }

@@ -150,7 +150,11 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         Some(Commands::Code { name, copy }) => cmd_code(&name, copy),
         Some(Commands::Copy { name }) => cmd_code(&name, true),
         Some(Commands::Show { name }) => cmd_show(&name),
-        Some(Commands::Scan { path, name }) => cmd_scan(&path, name.as_deref()),
+        Some(Commands::Scan { paths, name, filter }) => {
+            cmd_scan(&paths, name.as_deref(), filter.as_deref())
+        }
+        Some(Commands::Backup { output, plain }) => cmd_backup(output.as_deref(), plain),
+        Some(Commands::Clear) => cmd_clear(),
         Some(Commands::List { limit, all }) => cmd_list(limit, all),
         Some(Commands::Edit {
             name,
@@ -174,7 +178,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             show_bazi,
             show_pet,
             keychain,
-        }) => cmd_config(pet, city, show_weather, show_bazi, show_pet, keychain),
+            reset,
+        }) => cmd_config(pet, city, show_weather, show_bazi, show_pet, keychain, reset),
     }
 }
 
@@ -293,27 +298,248 @@ fn cmd_show(name: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn cmd_scan(path: &str, name: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
-    let content = utils::qrcode_util::decode_from_image(path)?;
+/// 简易过滤模式：忽略大小写；`|` 或、`*` 通配、`^`/`$` 锚点
+fn filter_match(pattern: &str, text: &str) -> bool {
+    let text = text.to_lowercase();
+    pattern.split('|').any(|alt| {
+        let alt = alt.trim();
+        if alt.is_empty() {
+            return false;
+        }
+        let anchor_start = alt.starts_with('^');
+        let anchor_end = alt.ends_with('$');
+        let core = alt.trim_start_matches('^').trim_end_matches('$');
+        let segs: Vec<String> = core
+            .split('*')
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_lowercase())
+            .collect();
+        if segs.is_empty() {
+            return false;
+        }
+        let mut pos = 0usize;
+        for (i, seg) in segs.iter().enumerate() {
+            if i == 0 && anchor_start {
+                if !text[pos..].starts_with(seg) {
+                    return false;
+                }
+                pos += seg.len();
+                continue;
+            }
+            match text[pos..].find(seg.as_str()) {
+                Some(idx) => pos = pos + idx + seg.len(),
+                None => return false,
+            }
+        }
+        if anchor_end && !text.ends_with(segs.last().unwrap().as_str()) {
+            return false;
+        }
+        true
+    })
+}
 
-    if !content.starts_with("otpauth://") {
-        return Err(format!("QR code does not contain an otpauth:// URI: {}", content).into());
+fn collect_images(path: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+    if path.is_dir() {
+        if let Ok(rd) = std::fs::read_dir(path) {
+            let mut entries: Vec<_> = rd.filter_map(|e| e.ok()).collect();
+            entries.sort_by_key(|e| e.file_name());
+            for e in entries {
+                collect_images(&e.path(), out);
+            }
+        }
+    } else if path.is_file() {
+        let ext = path
+            .extension()
+            .and_then(|x| x.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        if matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp" | "bmp") {
+            out.push(path.to_path_buf());
+        }
     }
+}
 
-    let mut entry = storage::models::OtpEntry::from_otpauth_uri(&content)?;
+fn cmd_scan(
+    paths: &[String],
+    name: Option<&str>,
+    filter: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let filter = filter.map(|f| f.to_string());
 
-    if let Some(n) = name {
-        entry.name = n.to_string();
+    let mut images: Vec<std::path::PathBuf> = Vec::new();
+    for p in paths {
+        collect_images(std::path::Path::new(p), &mut images);
+    }
+    if images.is_empty() {
+        return Err(
+            "No QR image files found (png/jpg/jpeg/webp/bmp; directories are scanned recursively)"
+                .into(),
+        );
     }
 
     let mut vault = storage::vault::Vault::load()?;
-    vault.add_entry(entry.clone())?;
-    vault.save()?;
+    let (mut added, mut skipped, mut failed) = (0usize, 0usize, 0usize);
+    let mut report: Vec<String> = Vec::new();
 
-    println!("{} Scanned and added '{}'", "✓".green(), entry.name);
-    if let Some(issuer) = &entry.issuer {
-        println!("  Issuer: {}", issuer);
+    for img in &images {
+        let label = img.display().to_string();
+        match utils::qrcode_util::decode_from_image(&label) {
+            Ok(content) if content.starts_with("otpauth://") => {
+                match storage::models::OtpEntry::from_otpauth_uri(&content) {
+                    Ok(mut entry) => {
+                        if images.len() == 1 {
+                            if let Some(n) = name {
+                                entry.name = n.to_string();
+                            }
+                        }
+                        if let Some(f) = &filter {
+                            let hit = filter_match(f, &entry.name)
+                                || entry.issuer.as_deref().map(|i| filter_match(f, i)).unwrap_or(false);
+                            if !hit {
+                                skipped += 1;
+                                report.push(format!("  = {} skipped (filter miss)", entry.name));
+                                continue;
+                            }
+                        }
+                        let base = entry.name.clone();
+                        let mut k = 2;
+                        while vault
+                            .list_entries()
+                            .iter()
+                            .any(|e| e.name == entry.name && e.issuer == entry.issuer)
+                        {
+                            entry.name = format!("{}_{}", base, k);
+                            k += 1;
+                        }
+                        let renamed = entry.name != base;
+                        vault.add_entry(entry.clone())?;
+                        added += 1;
+                        report.push(format!(
+                            "  + {}{}",
+                            entry.name,
+                            if renamed {
+                                format!(" (dup renamed, was '{}')", base)
+                            } else {
+                                String::new()
+                            }
+                        ));
+                    }
+                    Err(e) => {
+                        failed += 1;
+                        report.push(format!("  ✗ {}: otpauth parse failed ({})", label, e));
+                    }
+                }
+            }
+            Ok(content) => {
+                failed += 1;
+                let head: String = content.chars().take(30).collect();
+                report.push(format!("  ✗ {}: not an otpauth:// QR ({})", label, head));
+            }
+            Err(e) => {
+                failed += 1;
+                report.push(format!("  ✗ {}: no QR detected ({})", label, e));
+            }
+        }
     }
+
+    if added > 0 {
+        vault.save()?;
+    }
+    for line in &report {
+        println!("{}", line);
+    }
+    println!(
+        "{} Scan done: {} image(s) | {} added | {} skipped | {} failed",
+        "✓".green(),
+        images.len(),
+        added,
+        skipped,
+        failed
+    );
+    Ok(())
+}
+
+fn backups_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    let dir = dirs::config_dir()
+        .ok_or("Cannot determine config directory")?
+        .join("mfa-cli")
+        .join("backups");
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
+fn cmd_backup(output: Option<&str>, plain: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let vault = storage::vault::Vault::load()?;
+    let n = vault.list_entries().len();
+    let encrypted = dirs::config_dir()
+        .map(|d| d.join("mfa-cli").join("vault.enc").exists())
+        .unwrap_or(false);
+    let use_plain = plain || !encrypted;
+
+    let path = match output {
+        Some(p) => std::path::PathBuf::from(p),
+        None => {
+            let ts = chrono::Local::now().format("%Y%m%d-%H%M%S");
+            backups_dir()?.join(format!(
+                "vault-{}.{}",
+                ts,
+                if use_plain { "json" } else { "enc" }
+            ))
+        }
+    };
+
+    if use_plain {
+        let json = serde_json::to_string_pretty(vault.list_entries())?;
+        std::fs::write(&path, json)?;
+        storage::vault::Vault::set_file_permissions(&path)?;
+        println!("{} Backed up {} entries (plain) → {}", "✓".green(), n, path.display().to_string().cyan());
+        println!(
+            "  {} Plain backup: keep off repos/cloud; restore with {}",
+            "→".yellow(),
+            "mfa import <path>".cyan()
+        );
+    } else {
+        let data = vault.export_encrypted()?;
+        std::fs::write(&path, data)?;
+        storage::vault::Vault::set_file_permissions(&path)?;
+        println!("{} Backed up {} entries (encrypted) → {}", "✓".green(), n, path.display().to_string().cyan());
+        println!(
+            "  {} Restore with {}",
+            "→".yellow(),
+            format!("mfa import -s encrypted {}", path.display()).cyan()
+        );
+    }
+    Ok(())
+}
+
+fn cmd_clear() -> Result<(), Box<dyn std::error::Error>> {
+    let mut vault = storage::vault::Vault::load()?;
+    let n = vault.list_entries().len();
+    if n == 0 {
+        println!("{} Vault already empty.", "✓".green());
+        return Ok(());
+    }
+
+    let ts = chrono::Local::now().format("%Y%m%d-%H%M%S");
+    let backup = backups_dir()?.join(format!("vault-{}-before-clear.json", ts));
+    let json = serde_json::to_string_pretty(vault.list_entries())?;
+    std::fs::write(&backup, json)?;
+    storage::vault::Vault::set_file_permissions(&backup)?;
+
+    println!();
+    println!("  {} 即将清空全部 {} 条记录", "⚠".yellow().bold(), n);
+    println!("  {} 自动备份已写入：{}", "✓".green(), backup.display().to_string().cyan());
+    print!("  输入 yes 确认清空（其他取消）：");
+    std::io::Write::flush(&mut std::io::stdout())?;
+    let mut ans = String::new();
+    std::io::BufRead::read_line(&mut std::io::stdin().lock(), &mut ans)?;
+    if ans.trim() != "yes" {
+        println!("  已取消，未做任何更改。");
+        return Ok(());
+    }
+    vault.clear_entries();
+    vault.save()?;
+    println!("  {} 已清空 {} 条（备份在 {}）", "✓".green(), n, backup.display().to_string().cyan());
     Ok(())
 }
 
@@ -499,15 +725,16 @@ fn cmd_list(limit: Option<usize>, show_all: bool) -> Result<(), Box<dyn std::err
     let issuer_col = max_issuer_w.clamp(12, 36);
     let idx_w = 5.max(sorted.len().to_string().len()); // "INDEX" header width
     let idx_digits = 2.max(sorted.len().to_string().len()); // zero-padded: 01, 02, …
-    let inner_w = idx_w + 2 + name_col + 2 + issuer_col + 2 + 12 + 2 + 4;
+    let inner_w = idx_w + 2 + name_col + 2 + issuer_col + 2 + 10 + 2 + 12 + 2 + 4;
 
     // ── Table header (open rules) ──
     println!("  {}", "─".repeat(inner_w).dimmed());
     println!(
-        "  {}  {}  {}  {}  {}",
+        "  {}  {}  {}  {}  {}  {}",
         pad_to_width("INDEX", idx_w).dimmed(),
         pad_to_width("NAME", name_col).blue().bold(),
         pad_to_width("ISSUER", issuer_col).magenta(),
+        pad_to_width("ADDED", 10).bold(),
         pad_to_width("CODE", 12).green().bold(),
         pad_to_width("⏱", 4).yellow(),
     );
@@ -521,9 +748,22 @@ fn cmd_list(limit: Option<usize>, show_all: bool) -> Result<(), Box<dyn std::err
         };
         let remaining = entry.period - (now % entry.period);
 
-        let name_display = truncate_str(&entry.name, 36);
+        let is_new = entry.is_new();
+        let name_w = name_col.saturating_sub(if is_new { 2 } else { 0 });
+        let name_cell = if is_new {
+            format!(
+                "{}{}",
+                pad_to_width(&truncate_str(&entry.name, name_w), name_w).cyan(),
+                " ✦".bright_green()
+            )
+        } else {
+            pad_to_width(&truncate_str(&entry.name, name_col), name_col)
+                .cyan()
+                .to_string()
+        };
         let issuer_raw = entry.issuer.as_deref().unwrap_or("");
         let issuer_display = truncate_str(issuer_raw, 36);
+        let added = pad_to_width(entry.created_at.as_deref().unwrap_or("-"), 10);
 
         let code_padded = pad_to_width(&code, 12);
         let code_style = if !code_ok {
@@ -542,10 +782,11 @@ fn cmd_list(limit: Option<usize>, show_all: bool) -> Result<(), Box<dyn std::err
 
         let num = format!("{:>w$}", format!("{:0d$}", idx + 1, d = idx_digits), w = idx_w);
         println!(
-            "  {}  {}  {}  {}  {}",
+            "  {}  {}  {}  {}  {}  {}",
             num.dimmed(),
-            pad_to_width(&name_display, name_col).cyan(),
+            name_cell,
             pad_to_width(&issuer_display, issuer_col).magenta(),
+            added,
             code_style,
             timer,
         );
@@ -991,9 +1232,20 @@ fn cmd_config(
     show_bazi: Option<bool>,
     show_pet: Option<bool>,
     keychain: Option<bool>,
+    reset: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = config::Config::load();
     let mut changed = false;
+
+    if reset {
+        config = config::Config::default();
+        let _ = keychain::delete();
+        println!(
+            "{} 设置已恢复默认 (pet=robot, weather/bazi/pet=ON, keychain=off；钥匙串托管已清除)",
+            "✓".green()
+        );
+        changed = true;
+    }
 
     if let Some(p) = &pet {
         config.set_pet(p)?;

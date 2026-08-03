@@ -12,6 +12,12 @@ pub struct OtpEntry {
     pub otp_type: String,
     #[serde(default)]
     pub counter: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+}
+
+pub fn today_str() -> String {
+    chrono::Local::now().format("%Y-%m-%d").to_string()
 }
 
 fn default_otp_type() -> String {
@@ -49,10 +55,23 @@ impl OtpEntry {
             period,
             otp_type: "totp".to_string(),
             counter: 0,
+            created_at: Some(today_str()),
         })
     }
 
-    /// Parse from otpauth:// URI
+    /// 7 天内的记录视为"新"，UI 挂 ✦ 标签
+    pub fn is_new(&self) -> bool {
+        match &self.created_at {
+            Some(d) => match chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d") {
+                Ok(c) => {
+                    let age = (chrono::Local::now().date_naive() - c).num_days();
+                    (0..=7).contains(&age)
+                }
+                Err(_) => false,
+            },
+            None => false,
+        }
+    }
     pub fn from_otpauth_uri(uri: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let parsed = url::Url::parse(uri)?;
         if parsed.scheme() != "otpauth" {
@@ -108,6 +127,7 @@ impl OtpEntry {
             period,
             otp_type,
             counter: 0,
+            created_at: Some(today_str()),
         })
     }
 
@@ -218,6 +238,7 @@ mod tests {
             period: 30,
             otp_type: "totp".into(),
             counter: 0,
+            created_at: None,
         };
         e.sanitize();
         assert_eq!(e.name, "dongshu.bu@1721358628378104");

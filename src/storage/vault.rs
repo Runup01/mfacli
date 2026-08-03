@@ -160,6 +160,10 @@ impl Vault {
         Ok(())
     }
 
+    pub fn clear_entries(&mut self) {
+        self.entries.clear();
+    }
+
     pub fn add_entry(&mut self, entry: OtpEntry) -> Result<(), Box<dyn std::error::Error>> {
         if self
             .entries

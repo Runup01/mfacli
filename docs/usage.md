@@ -51,11 +51,24 @@ mfa add aws -s KRSXG5CTMVRXEZLU -i AWS         # 直接传（会留历史，不�
 ### `mfa show <name|index>`
 显示密钥 / 算法 / URI + 终端二维码（手机扫描同步）。
 
-### `mfa scan <img> [-n NAME]`
-解码 QR 图片（PNG/JPG）导入。`-n` 自定义名称。
+### `mfa scan <PATH>... [-n NAME] [-f REGEX]`
+解码 QR 图片导入。**支持批量**：多个路径、目录自动递归（png/jpg/jpeg/webp/bmp）。
+
+| 参数 | 说明 |
+|------|------|
+| `-n/--name` | 自定义名称（仅单文件生效） |
+| `-f/--filter` | 简易正则：仅导入 name/issuer 命中的条目。支持 `\|` 或、`*` 通配、`^`/`$` 锚点，忽略大小写 |
+
+```bash
+mfa scan qr.png                      # 单张
+mfa scan ./qr-dir/                   # 整个目录递归
+mfa scan a.png b.jpg -f 'aliyun|tencent'   # 批量 + 过滤
+```
+
+重名条目自动 `_2` 递增；结束输出 added/skipped/failed 汇总。
 
 ### `mfa list [-l N] [--all]`
-按 issuer→name 排序列出。`-l` 限条数，`--all` 不分页。
+按 issuer→name 排序列出。`-l` 限条数，`--all` 不分页。含 **ADDED** 列（加入日期）；**7 天内**新记录名字后挂 `✦` 标签（TUI 同，底栏另显示完整日期）。
 
 ### `mfa edit <name|index> [OPTIONS]`
 
@@ -112,6 +125,12 @@ mfa import -s encrypted backup.enc
 ### `mfa unlock`
 验证密码后解密回明文。
 
+### `mfa backup [-o PATH] [--plain]`
+一键备份（时间戳命名，存 `backups/` 目录）。加密库默认导出**加密**备份；`--plain` 强制明文逃生备份。
+
+### `mfa clear`
+一键清空全部记录：**先自动明文备份** → 输入 `yes` 确认 → 清空。防手滑。
+
 ### `mfa config [OPTIONS]`
 
 | 参数 | 取值 | 说明 |
@@ -121,7 +140,8 @@ mfa import -s encrypted backup.enc
 | `--show-weather` | true/false | 天气开关 |
 | `--show-bazi` | true/false | 黄历开关 |
 | `--show-pet` | true/false | 宠物开关 |
-| `--keychain` | true/false | 本机免密：vault 密码托管到系统钥匙串 |
+| `--keychain` | on/off | 本机免密：vault 密码托管到系统钥匙串 |
+| `--reset` | （无值） | 恢复所有设置为默认（含清除钥匙串托管） |
 
 全局参数 `--no-keychain`：本次命令绕过免密、强制手动输密码（如 `mfa --no-keychain list`）。
 

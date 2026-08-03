@@ -124,6 +124,7 @@ enum Mode {
     AddIssuer,
     Rename,
     ConfirmDelete,
+    ConfirmClearAll,
     Settings,
     ViewQR,
     EditMenu,
@@ -167,7 +168,7 @@ enum StatusKind {
     Info,
 }
 
-const SETTINGS_ITEMS: [&str; 10] = [
+const SETTINGS_ITEMS: [&str; 13] = [
     "Pet Style",
     "Toggle Weather",
     "Toggle BaZi",
@@ -176,6 +177,9 @@ const SETTINGS_ITEMS: [&str; 10] = [
     "Import (otpauth:// file)",
     "Export (encrypted backup)",
     "Toggle Keychain (passwordless)",
+    "Backup now",
+    "Clear all entries",
+    "Reset config",
     "Toggle Encryption",
     "Close Settings",
 ];
@@ -338,6 +342,7 @@ impl TuiApp {
                 self.handle_input(key)
             }
             Mode::ConfirmDelete => self.handle_confirm_delete(key),
+            Mode::ConfirmClearAll => self.handle_confirm_clear(key),
             Mode::Settings => self.handle_settings(key),
             Mode::ViewQR => {
                 if matches!(
@@ -495,6 +500,37 @@ impl TuiApp {
         }
     }
 
+    fn handle_confirm_clear(&mut self, key: KeyCode) {
+        match key {
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                let n = self.entries.len();
+                let ts = chrono::Local::now().format("%Y%m%d-%H%M%S");
+                let mut msg = format!("Cleared {} entries", n);
+                if let Some(dir) = dirs::config_dir() {
+                    let p = dir
+                        .join("mfa-cli")
+                        .join("backups")
+                        .join(format!("vault-{}-before-clear.json", ts));
+                    let _ = std::fs::create_dir_all(p.parent().expect("backup dir"));
+                    if let Ok(json) = serde_json::to_string_pretty(&self.entries) {
+                        if std::fs::write(&p, json).is_ok() {
+                            msg = format!("Cleared {} (backup: {})", n, p.display());
+                        }
+                    }
+                }
+                self.entries.clear();
+                self.list_state.select(None);
+                self.save_vault();
+                self.status_message = Some((msg, StatusKind::Success));
+                self.mode = Mode::Normal;
+            }
+            _ => {
+                self.mode = Mode::Normal;
+                self.status_message = None;
+            }
+        }
+    }
+
     fn handle_settings(&mut self, key: KeyCode) {
         match key {
             KeyCode::Esc | KeyCode::Char('q') | KeyCode::Tab => {
@@ -600,13 +636,58 @@ impl TuiApp {
                 ));
             }
             8 => {
+                // Backup now (plain timestamped escape-hatch)
+                let ts = chrono::Local::now().format("%Y%m%d-%H%M%S");
+                let res = (|| -> Result<String, String> {
+                    let dir = dirs::config_dir()
+                        .ok_or("no config dir".to_string())?
+                        .join("mfa-cli")
+                        .join("backups");
+                    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+                    let p = dir.join(format!("vault-{}.json", ts));
+                    let json =
+                        serde_json::to_string_pretty(&self.entries).map_err(|e| e.to_string())?;
+                    std::fs::write(&p, json).map_err(|e| e.to_string())?;
+                    Ok(p.display().to_string())
+                })();
+                match res {
+                    Ok(p) => self.status_message = Some((
+                        format!("Backup → {} (plain, keep safe)", p),
+                        StatusKind::Success,
+                    )),
+                    Err(e) => self.status_message =
+                        Some((format!("Backup failed: {}", e), StatusKind::Error)),
+                }
+            }
+            9 => {
+                if self.entries.is_empty() {
+                    self.status_message =
+                        Some(("Vault already empty".to_string(), StatusKind::Info));
+                } else {
+                    self.status_message = Some((
+                        format!("Clear ALL {} entries?", self.entries.len()),
+                        StatusKind::Error,
+                    ));
+                    self.mode = Mode::ConfirmClearAll;
+                }
+            }
+            10 => {
+                self.config = crate::config::Config::default();
+                let _ = crate::keychain::delete();
+                let _ = self.config.save();
+                self.status_message = Some((
+                    "Config reset to defaults (keychain cleared)".to_string(),
+                    StatusKind::Success,
+                ));
+            }
+            11 => {
                 // Toggle encryption info
                 self.status_message = Some((
                     "Use CLI: mfa lock / mfa unlock (requires password setup)".to_string(),
                     StatusKind::Info,
                 ));
             }
-            9 => {
+            12 => {
                 self.mode = Mode::Normal;
                 let _ = self.config.save();
             }
@@ -1161,7 +1242,11 @@ impl TuiApp {
                         .add_modifier(Modifier::BOLD)
                 };
 
-                let name_d = pad(&trunc(&entry.name, 28), name_col);
+                let is_new = entry.is_new();
+                let name_d = pad(
+                    &trunc(&entry.name, if is_new { 26 } else { 28 }),
+                    name_col.saturating_sub(2),
+                );
                 let issuer_d = pad(
                     &trunc(entry.issuer.as_deref().unwrap_or(""), 28),
                     issuer_col,
@@ -1181,6 +1266,10 @@ impl TuiApp {
                         Style::default()
                             .fg(Color::LightBlue)
                             .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        if is_new { "✦ " } else { "  " },
+                        Style::default().fg(Color::LightGreen),
                     ),
                     Span::styled(issuer_d, Style::default().fg(Color::LightMagenta)),
                     Span::styled(pad(&code, 8), code_style),
@@ -1244,7 +1333,7 @@ impl TuiApp {
                     ),
                 ])
             }
-            Mode::ConfirmDelete => {
+            Mode::ConfirmDelete | Mode::ConfirmClearAll => {
                 let msg = self
                     .status_message
                     .as_ref()
@@ -1295,7 +1384,10 @@ impl TuiApp {
                             "OFF"
                         }
                     }
-                    8 => "CLI: mfa lock / mfa unlock",
+                    8 => "now → backups/",
+                    9 => "auto-backup + yes",
+                    10 => "restore defaults",
+                    11 => "CLI: mfa lock / mfa unlock",
                     _ => "",
                 };
                 Line::from(vec![
@@ -1430,6 +1522,19 @@ impl TuiApp {
                                 entry.issuer.as_deref().unwrap_or("-"),
                                 Style::default().fg(Color::LightMagenta),
                             ));
+                            spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
+                            spans.push(Span::styled(
+                                entry.created_at.as_deref().unwrap_or("-"),
+                                Style::default().fg(Color::Reset),
+                            ));
+                            if entry.is_new() {
+                                spans.push(Span::styled(
+                                    " ✦ new",
+                                    Style::default()
+                                        .fg(Color::LightGreen)
+                                        .add_modifier(Modifier::BOLD),
+                                ));
+                            }
                             spans.push(Span::styled("  ", Style::default()));
                         }
                     }
@@ -1510,7 +1615,7 @@ impl TuiApp {
     fn render_settings_popup(&self, f: &mut Frame) {
         let area = f.area();
         let popup_width = 52u16.min(area.width.saturating_sub(4));
-        let popup_height = 16u16.min(area.height.saturating_sub(4));
+        let popup_height = (SETTINGS_ITEMS.len() as u16 + 4).min(area.height.saturating_sub(4));
         let x = (area.width.saturating_sub(popup_width)) / 2;
         let y = (area.height.saturating_sub(popup_height)) / 2;
         let popup_area = Rect::new(x, y, popup_width, popup_height);
@@ -1565,6 +1670,9 @@ impl TuiApp {
                     "OFF".into()
                 },
             ),
+            ("Backup", "now → backups/".into()),
+            ("Clear all", "auto-backup + yes".into()),
+            ("Reset config", "defaults".into()),
             ("Encryption", "mfa lock / mfa unlock".into()),
             ("Close", "Esc".into()),
         ];

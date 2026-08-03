@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **OS keychain passwordless (opt-in)**: `mfa config --keychain on` stores the vault password in macOS Keychain / Windows DPAPI / Linux Secret Service; zero-input after first unlock; `--no-keychain` per-run bypass; TUI settings toggle; stale stored password auto-deleted on mismatch
 
+- `mfa backup` one-click timestamped backup (encrypted vault → encrypted backup; `--plain` escape hatch)
+- `mfa clear` wipe-all with mandatory auto-backup + typed yes confirmation (CLI & TUI)
+- `mfa config --reset` restore defaults (clears keychain store); TUI settings gains Backup / Clear all / Reset config
+- `mfa scan` batch mode: multiple paths + recursive directory scan; `--filter` pattern (`|`, `*`, `^`, `$`, case-insensitive)
+- Entries carry `created_at`; `list` shows ADDED column; entries <7 days get a ✦ marker in CLI & TUI
+
 ### Fixed
 - Interactive yes/no prompts now flush stdout immediately (prompt text no longer prints after the error line)
 - `mfa unlock` uses a clear two-step flow: verify password first, then confirm y/N

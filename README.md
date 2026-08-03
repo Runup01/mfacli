@@ -87,6 +87,9 @@
 | **TOTP / HOTP / Steam Guard** | RFC 6238 / 4226，SHA1/256/512，6/8 位，自定义周期 |
 | **二维码双向** | `show` 渲染 QR 供手机扫描；`scan` 扫 QR 图片导入 |
 | **导入 / 导出** | otpauth / JSON / CSV / Google 迁移；加密备份可上云 |
+| **批量扫码** | `scan` 支持目录递归批量导入 + 正则过滤 |
+| **一键运维** | `backup` 时间戳备份 / `clear` 清空（自动备份+确认）/ `config --reset` |
+| **加入时间** | 记录带 ADDED 日期列，7 天内新记录挂 ✦ 标签 |
 | **应用锁** | AES-256-GCM + Argon2id，启用前强制备份 |
 | **本机免密（opt-in）** | 密码托管 macOS Keychain / Windows DPAPI / Linux Secret Service，首次解锁后零输入 |
 | **本地优先** | 零云端、零遥测，核心全离线；vault 权限 600 |
