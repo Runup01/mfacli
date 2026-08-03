@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.9] - 2026-08-03
+
+### Changed
+- Release tarballs / zips now contain a single top-level directory (e.g. `mfacli-x86_64-unknown-linux-musl/`) instead of loose files, so extracting never clutters your current directory
+- Docs: Linux quick start recommends the musl static package (works on any distro / old glibc, e.g. CentOS 7)
+
+### Fixed
+- TUI list columns no longer shift by one on the longest-name row (name column padding off-by-one)
+- `scan` conflict prompt now tells "vault 中已存在" apart from "本批次重复" (duplicate QR images inside one batch no longer look like ghost entries)
+- QR display now uses only full-block '█' + space (one cell per module): crisp and identical on macOS / Linux / SSH / web terminals, where half-block glyphs ('▀'/'▄') distort; verified decodable end-to-end
+
 ## [0.1.8] - 2026-08-03
 
 ### Added

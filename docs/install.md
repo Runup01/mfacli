@@ -1,6 +1,6 @@
 # 安装指南 / Installation
 
-mfacli 是**静态编译的单文件**，安装 = 把 `mfa` 二进制放进 `PATH`。无运行时、无依赖库。当前版本 **0.1.8**。
+mfacli 是**静态编译的单文件**，安装 = 把 `mfa` 二进制放进 `PATH`。无运行时、无依赖库。当前版本 **0.1.9**。
 
 ## 方式一：下载预编译包（推荐）
 
@@ -22,10 +22,10 @@ mfacli 是**静态编译的单文件**，安装 = 把 `mfa` 二进制放进 `PAT
 
 ```bash
 # macOS Apple Silicon（tarball 文件名不含版本号，latest 链接稳定）
+# 解压得同名目录 mfacli-aarch64-apple-darwin/，不弄乱当前目录
 curl -LO https://github.com/Runup01/mfacli/releases/latest/download/mfacli-aarch64-apple-darwin.tar.gz
 tar xzf mfacli-aarch64-apple-darwin.tar.gz
-chmod +x mfa
-sudo mv mfa /usr/local/bin/
+sudo install -m 755 mfacli-aarch64-apple-darwin/mfa /usr/local/bin/
 mfa --version
 ```
 
@@ -34,18 +34,16 @@ mfa --version
 静态链接、零运行时依赖，**任何发行版 / 任何 glibc 版本**（含 CentOS 7、Rocky 8 等老系统）直接可用：
 
 ```bash
-# x86_64
+# x86_64（解压得同名目录 mfacli-x86_64-unknown-linux-musl/）
 curl -LO https://github.com/Runup01/mfacli/releases/latest/download/mfacli-x86_64-unknown-linux-musl.tar.gz
 tar xzf mfacli-x86_64-unknown-linux-musl.tar.gz
-chmod +x mfa
-sudo mv mfa /usr/local/bin/
+sudo install -m 755 mfacli-x86_64-unknown-linux-musl/mfa /usr/local/bin/
 mfa --version
 
 # ARM64
 curl -LO https://github.com/Runup01/mfacli/releases/latest/download/mfacli-aarch64-unknown-linux-musl.tar.gz
 tar xzf mfacli-aarch64-unknown-linux-musl.tar.gz
-chmod +x mfa
-sudo mv mfa /usr/local/bin/
+sudo install -m 755 mfacli-aarch64-unknown-linux-musl/mfa /usr/local/bin/
 ```
 
 > 为什么推荐 musl？deb/rpm 使用 gnu 工具链构建，在 glibc < 2.34 的老系统上会报
@@ -55,26 +53,28 @@ sudo mv mfa /usr/local/bin/
 ### Debian / Ubuntu（.deb）
 
 ```bash
-curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.8/mfacli_0.1.8_amd64.deb
-sudo dpkg -i mfacli_0.1.8_amd64.deb
-# 或 apt 自动处理依赖：sudo apt install -y ./mfacli_0.1.8_amd64.deb
+curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.9/mfacli_0.1.9_amd64.deb
+sudo dpkg -i mfacli_0.1.9_amd64.deb
+# 或 apt 自动处理依赖：sudo apt install -y ./mfacli_0.1.9_amd64.deb
 ```
 
 ### CentOS / Rocky / AlmaLinux（.rpm）
 
 ```bash
-curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.8/mfacli-0.1.8-1.x86_64.rpm
-sudo rpm -i mfacli-0.1.8-1.x86_64.rpm
-# 升级用：sudo rpm -U mfacli-0.1.8-1.x86_64.rpm
+curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.9/mfacli-0.1.9-1.x86_64.rpm
+sudo rpm -i mfacli-0.1.9-1.x86_64.rpm
+# 升级用：sudo rpm -U mfacli-0.1.9-1.x86_64.rpm
 ```
 
 ### Windows
 
-1. 解压 `mfacli-x86_64-pc-windows-msvc.zip` 得 `mfa.exe`。
-2. 放入固定目录，如 `C:\tools\mfacli`。
-3. 加入 PATH（PowerShell，无需管理员）：
+1. 解压 `mfacli-x86_64-pc-windows-msvc.zip`，得同名目录（内含 `mfa.exe`、README、LICENSE）。
    ```powershell
-   [Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\tools\mfacli", "User")
+   Expand-Archive mfacli.zip C:\tools   # → C:\tools\mfacli-x86_64-pc-windows-msvc\
+   ```
+2. 加入 PATH（PowerShell，无需管理员）：
+   ```powershell
+   [Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\tools\mfacli-x86_64-pc-windows-msvc", "User")
    ```
    重开终端后 `mfa --version` 生效。
 
@@ -134,7 +134,7 @@ certutil -hashfile <file> SHA256                   # Windows
 ## 验证安装
 
 ```bash
-mfa --version   # → mfa 0.1.8
+mfa --version   # → mfa 0.1.9
 mfa --help      # 全部子命令
 ```
 

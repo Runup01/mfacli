@@ -1268,8 +1268,7 @@ impl TuiApp {
             .map(|e| tw(&trunc(&e.name, 28)))
             .max()
             .unwrap_or(16)
-            .max(16)
-            + 1;
+            .max(16);
         let issuer_col = self
             .entries
             .iter()
@@ -1282,7 +1281,7 @@ impl TuiApp {
         let selected = self.list_state.selected().unwrap_or(0);
         let idx_w = 2.max(self.entries.len().to_string().len());
         // Show ADDED date column only when the terminal is wide enough
-        let base_w = 2 + idx_w + 1 + name_col.saturating_sub(2) + 2 + issuer_col + 8 + 11 + 4;
+        let base_w = 2 + idx_w + 1 + name_col + 1 + 2 + issuer_col + 8 + 11 + 4;
         let show_added = (area.width as usize) >= base_w + 13;
         let items: Vec<ListItem> = self
             .entries
@@ -1313,7 +1312,7 @@ impl TuiApp {
                 let is_new = entry.is_new();
                 let name_d = pad(
                     &trunc(&entry.name, if is_new { 26 } else { 28 }),
-                    name_col.saturating_sub(2),
+                    name_col + 1,
                 );
                 let issuer_d = pad(
                     &trunc(entry.issuer.as_deref().unwrap_or(""), 28),

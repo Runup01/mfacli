@@ -263,7 +263,7 @@ fn cmd_add(
         .iter()
         .any(|e| e.name == entry.name && e.issuer == entry.issuer)
     {
-        match conflict_action(&entry.name, entry.issuer.as_deref(), conflict)? {
+        match conflict_action(&entry.name, entry.issuer.as_deref(), conflict, "vault 中已存在")? {
             ConflictAction::Overwrite => {
                 vault.replace_entry(entry);
                 println!("{} Overwrote '{}'", "✓".green(), name);
@@ -356,6 +356,7 @@ fn conflict_action(
     name: &str,
     issuer: Option<&str>,
     mode: &str,
+    reason: &str,
 ) -> Result<ConflictAction, Box<dyn std::error::Error>> {
     match mode {
         "overwrite" => return Ok(ConflictAction::Overwrite),
@@ -368,9 +369,10 @@ fn conflict_action(
         return Ok(ConflictAction::Rename);
     }
     print!(
-        "  '{}' ({}) 已存在 — [y] 覆盖 / [r] 重命名 _2 / [s] 跳过：",
+        "  '{}' ({}) {} — [y] 覆盖 / [r] 重命名 _2 / [s] 跳过：",
         name,
-        issuer.unwrap_or("-")
+        issuer.unwrap_or("-"),
+        reason
     );
     std::io::Write::flush(&mut std::io::stdout())?;
     let mut ans = String::new();
@@ -479,6 +481,13 @@ fn cmd_scan(
     }
 
     let mut vault = storage::vault::Vault::load()?;
+    // Snapshot of what was on disk before this run, to tell
+    // "already in vault" apart from "duplicate inside this batch".
+    let initial: std::collections::HashSet<(String, Option<String>)> = vault
+        .list_entries()
+        .iter()
+        .map(|e| (e.name.clone(), e.issuer.clone()))
+        .collect();
     let (mut added, mut overwritten, mut skipped, mut failed) = (0usize, 0usize, 0usize, 0usize);
     let mut report: Vec<String> = Vec::new();
 
@@ -509,7 +518,12 @@ fn cmd_scan(
                             .iter()
                             .any(|e| e.name == base && e.issuer == iss)
                         {
-                            match conflict_action(&base, iss.as_deref(), conflict)? {
+                            let reason = if initial.contains(&(base.clone(), iss.clone())) {
+                                "vault 中已存在"
+                            } else {
+                                "本批次重复（前面已扫入同名条目）"
+                            };
+                            match conflict_action(&base, iss.as_deref(), conflict, reason)? {
                                 ConflictAction::Skip => {
                                     skipped += 1;
                                     report.push(format!("  = {} skipped (exists)", base));
@@ -1347,7 +1361,7 @@ fn cmd_import(source: Option<&str>, path: &str, conflict: &str) -> Result<(), Bo
         {
             let base = entry.name.clone();
             let iss = entry.issuer.clone();
-            match conflict_action(&base, iss.as_deref(), conflict)? {
+            match conflict_action(&base, iss.as_deref(), conflict, "vault 中已存在")? {
                 ConflictAction::Skip => {
                     skipped += 1;
                     println!("  = {} skipped (exists)", original_name);

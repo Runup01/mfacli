@@ -1,49 +1,39 @@
 use qrcode::{EcLevel, QrCode};
 
-/// Render a QR code as terminal text using Unicode half-block characters.
-/// Uses EcLevel::L (lowest error correction) for smallest possible QR size.
+/// Render a QR code as terminal text.
+///
+/// Uses only full-block '█' + space (one cell per module): the two most
+/// universally supported glyphs, so output stays crisp on macOS, Linux,
+/// SSH and web terminals alike (half-block chars like '▀'/'▄' distort on
+/// terminals whose fonts/line-spacing misrender them).
 pub fn render_to_terminal(data: &str) -> Result<String, Box<dyn std::error::Error>> {
     let code = QrCode::with_error_correction_level(data.as_bytes(), EcLevel::L)?;
     let colors = code.to_colors();
     let width = code.width();
 
+    let quiet = 1;
+    let row_w = width + quiet * 2;
+    let blank = " ".repeat(row_w);
+
     let mut output = String::new();
-    let quiet = 1; // minimal quiet zone for compact display
-
-    // Top quiet zone
     for _ in 0..quiet {
-        output.push_str(&" ".repeat(width + quiet * 2));
+        output.push_str(&blank);
         output.push('\n');
     }
-
-    let mut y = 0;
-    while y < width {
-        output.push_str(&" ".repeat(quiet)); // left quiet zone
-
+    for y in 0..width {
+        output.push_str(&" ".repeat(quiet));
         for x in 0..width {
-            let top = colors[y * width + x] == qrcode::Color::Dark;
-            let bottom = if y + 1 < width {
-                colors[(y + 1) * width + x] == qrcode::Color::Dark
+            output.push(if colors[y * width + x] == qrcode::Color::Dark {
+                '█'
             } else {
-                false
-            };
-
-            match (top, bottom) {
-                (true, true) => output.push('█'),
-                (true, false) => output.push('▀'),
-                (false, true) => output.push('▄'),
-                (false, false) => output.push(' '),
-            }
+                ' '
+            });
         }
-
-        output.push_str(&" ".repeat(quiet)); // right quiet zone
+        output.push_str(&" ".repeat(quiet));
         output.push('\n');
-        y += 2;
     }
-
-    // Bottom quiet zone
     for _ in 0..quiet {
-        output.push_str(&" ".repeat(width + quiet * 2));
+        output.push_str(&blank);
         output.push('\n');
     }
 

@@ -66,20 +66,22 @@ jobs:
       - name: Package (Unix)
         if: matrix.os != 'windows-latest'
         run: |
-          mkdir -p dist
-          cp target/${{ matrix.target }}/release/mfa dist/
-          cp README.md LICENSE dist/
-          tar czf ${{ matrix.archive }} -C dist .
+          STEM="${{ matrix.archive }}" && STEM="${STEM%.tar.gz}"
+          mkdir -p "dist/$STEM"
+          cp "target/${{ matrix.target }}/release/mfa" "dist/$STEM/"
+          cp README.md LICENSE "dist/$STEM/"
+          tar czf "${{ matrix.archive }}" -C dist "$STEM"
 
       - name: Package (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Path dist -Force
-          Copy-Item target/${{ matrix.target }}/release/mfa.exe dist/
-          Copy-Item README.md dist/
-          Copy-Item LICENSE dist/
-          Compress-Archive -Path dist/* -DestinationPath ${{ matrix.archive }}
+          $stem = "${{ matrix.archive }}" -replace '\.zip$',''
+          New-Item -ItemType Directory -Path "dist/$stem" -Force
+          Copy-Item target/${{ matrix.target }}/release/mfa.exe "dist/$stem/"
+          Copy-Item README.md "dist/$stem/"
+          Copy-Item LICENSE "dist/$stem/"
+          Compress-Archive -Path "dist/$stem" -DestinationPath ${{ matrix.archive }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

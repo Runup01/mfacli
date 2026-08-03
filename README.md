@@ -117,19 +117,22 @@
 
 ```bash
 curl -LO https://github.com/Runup01/mfacli/releases/latest/download/mfacli-aarch64-apple-darwin.tar.gz
-tar xzf mfacli-aarch64-apple-darwin.tar.gz && chmod +x mfa && sudo mv mfa /usr/local/bin/
+tar xzf mfacli-aarch64-apple-darwin.tar.gz
+sudo install -m 755 mfacli-aarch64-apple-darwin/mfa /usr/local/bin/
 ```
 
 **🐧 Linux 通用（推荐：musl 静态包，全发行版通吃）**
 
 ```bash
-# x86_64
+# x86_64（解压得同名目录，不弄乱当前目录）
 curl -LO https://github.com/Runup01/mfacli/releases/latest/download/mfacli-x86_64-unknown-linux-musl.tar.gz
-tar xzf mfacli-x86_64-unknown-linux-musl.tar.gz && chmod +x mfa && sudo mv mfa /usr/local/bin/
+tar xzf mfacli-x86_64-unknown-linux-musl.tar.gz
+sudo install -m 755 mfacli-x86_64-unknown-linux-musl/mfa /usr/local/bin/
 
 # ARM64
 curl -LO https://github.com/Runup01/mfacli/releases/latest/download/mfacli-aarch64-unknown-linux-musl.tar.gz
-tar xzf mfacli-aarch64-unknown-linux-musl.tar.gz && chmod +x mfa && sudo mv mfa /usr/local/bin/
+tar xzf mfacli-aarch64-unknown-linux-musl.tar.gz
+sudo install -m 755 mfacli-aarch64-unknown-linux-musl/mfa /usr/local/bin/
 ```
 
 > musl 版静态链接、零依赖，CentOS 7 / Rocky 8 / 新 glibc 发行版都能直接跑（deb/rpm 的 gnu 版在老系统可能缺 GLIBC）。
@@ -137,23 +140,23 @@ tar xzf mfacli-aarch64-unknown-linux-musl.tar.gz && chmod +x mfa && sudo mv mfa 
 **🐧 Ubuntu / Debian（amd64，偏好包管理）**
 
 ```bash
-curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.8/mfacli_0.1.8_amd64.deb
-sudo dpkg -i mfacli_0.1.8_amd64.deb
+curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.9/mfacli_0.1.9_amd64.deb
+sudo dpkg -i mfacli_0.1.9_amd64.deb
 ```
 
 **🎩 CentOS / Rocky / AlmaLinux（x86_64，偏好包管理）**
 
 ```bash
-curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.8/mfacli-0.1.8-1.x86_64.rpm
-sudo rpm -i mfacli-0.1.8-1.x86_64.rpm
+curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.9/mfacli-0.1.9-1.x86_64.rpm
+sudo rpm -i mfacli-0.1.9-1.x86_64.rpm
 ```
 
 **🪟 Windows（PowerShell）**
 
 ```powershell
 Invoke-WebRequest https://github.com/Runup01/mfacli/releases/latest/download/mfacli-x86_64-pc-windows-msvc.zip -OutFile mfacli.zip
-Expand-Archive mfacli.zip C:\tools\mfacli
-[Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\tools\mfacli", "User")  # 重开终端生效
+Expand-Archive mfacli.zip C:\tools   # 解压得 C:\tools\mfacli-x86_64-pc-windows-msvc\
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\tools\mfacli-x86_64-pc-windows-msvc", "User")  # 重开终端生效
 ```
 
 > Intel Mac / ARM64 Linux / 校验和 / 源码编译 → [docs/install.md](docs/install.md)
