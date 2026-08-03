@@ -1,7 +1,11 @@
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "mfa", version, about = "A developer-friendly CLI MFA/OTP manager")]
+#[command(
+    name = "mfa",
+    version,
+    about = "A developer-friendly CLI MFA/OTP manager"
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -57,7 +61,7 @@ pub enum Commands {
 
     /// Generate the current OTP code
     Code {
-        /// Name of the entry
+        /// Name or list index (#) of the entry
         name: String,
 
         /// Copy code to clipboard
@@ -67,13 +71,13 @@ pub enum Commands {
 
     /// Copy OTP code to clipboard
     Copy {
-        /// Name of the entry
+        /// Name or list index (#) of the entry
         name: String,
     },
 
     /// Show entry details: secret + QR code
     Show {
-        /// Name of the entry
+        /// Name or list index (#) of the entry
         name: String,
     },
 
@@ -100,7 +104,7 @@ pub enum Commands {
 
     /// Rename an entry (shortcut for `edit <name> --rename <new>`)
     Rename {
-        /// Current name
+        /// Current name or list index (#)
         old: String,
 
         /// New name
@@ -109,7 +113,7 @@ pub enum Commands {
 
     /// Edit an entry (name, secret, issuer)
     Edit {
-        /// Name of the entry to edit
+        /// Name or list index (#) of the entry to edit
         name: String,
 
         /// New name
@@ -127,7 +131,7 @@ pub enum Commands {
 
     /// Remove an entry
     Remove {
-        /// Name of the entry
+        /// Name or list index (#) of the entry
         name: String,
     },
 

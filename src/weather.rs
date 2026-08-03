@@ -1,6 +1,5 @@
 /// Weather module: fetches from wttr.in with IP auto-detection
 /// Runs in background thread, caches result, never blocks main logic.
-
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
@@ -73,7 +72,8 @@ fn fetch_from_network(city: Option<&str>) -> Option<String> {
     let stream = TcpStream::connect_timeout(
         &(host, 80).to_socket_addrs().ok()?.next()?,
         Duration::from_secs(3),
-    ).ok()?;
+    )
+    .ok()?;
 
     stream.set_read_timeout(Some(Duration::from_secs(3))).ok()?;
     let mut stream = stream;
@@ -142,7 +142,11 @@ fn clean_weather(raw: &str) -> String {
     if let Some((loc, rest)) = raw.split_once(':') {
         let city = loc.split(',').next().unwrap_or(loc).trim();
         let cond = rest.trim();
-        if city.is_empty() { raw.to_string() } else { format!("{} {}", city, cond) }
+        if city.is_empty() {
+            raw.to_string()
+        } else {
+            format!("{} {}", city, cond)
+        }
     } else {
         raw.to_string()
     }

@@ -5,7 +5,10 @@ use colored::Colorize;
 
 /// Import entries from a file. When `source` is None the format is
 /// auto-detected from the file contents, so `mfa import auth.txt` just works.
-pub fn import_from(source: Option<&str>, path: &str) -> Result<Vec<OtpEntry>, Box<dyn std::error::Error>> {
+pub fn import_from(
+    source: Option<&str>,
+    path: &str,
+) -> Result<Vec<OtpEntry>, Box<dyn std::error::Error>> {
     let src = source.unwrap_or_else(|| detect_source(path));
     match src {
         "google" => google::import(path),
@@ -60,7 +63,9 @@ fn import_encrypted(path: &str) -> Result<Vec<OtpEntry>, Box<dyn std::error::Err
         pw
     } else {
         let pw = rpassword::prompt_password("Export password: ")?;
-        if pw.is_empty() { return Err("Password cannot be empty".into()); }
+        if pw.is_empty() {
+            return Err("Password cannot be empty".into());
+        }
         pw
     };
     let json = crate::crypto::encryption::decrypt(&blob, &password)?;
@@ -81,10 +86,23 @@ fn import_csv(path: &str) -> Result<Vec<OtpEntry>, Box<dyn std::error::Error>> {
         let entry = OtpEntry::new(
             parts[0].trim().to_string(),
             parts[1].trim().to_string(),
-            parts.get(2).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
-            parts.get(3).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).unwrap_or_else(|| "SHA1".to_string()),
-            parts.get(4).and_then(|s| s.trim().parse().ok()).unwrap_or(6),
-            parts.get(5).and_then(|s| s.trim().parse().ok()).unwrap_or(30),
+            parts
+                .get(2)
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
+            parts
+                .get(3)
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "SHA1".to_string()),
+            parts
+                .get(4)
+                .and_then(|s| s.trim().parse().ok())
+                .unwrap_or(6),
+            parts
+                .get(5)
+                .and_then(|s| s.trim().parse().ok())
+                .unwrap_or(30),
         )?;
         entries.push(entry);
     }

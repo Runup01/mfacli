@@ -23,9 +23,10 @@ We aim to respond within 48 hours and will coordinate a fix + disclosure timelin
 ### Encryption
 
 - **Algorithm**: AES-256-GCM (authenticated encryption)
-- **Key derivation**: Argon2id (memory-hard, resistant to GPU/ASIC attacks)
+- **Key derivation**: Argon2id, 64 MiB / 3 passes / parallelism 4 (OWASP & RFC 9106 aligned); params stored in a versioned `MFA1` ciphertext header; legacy headerless vaults auto-detected and still decryptable
 - **Salt**: 16 bytes random per encryption
 - **Nonce**: 12 bytes random per encryption
+- **Key material**: derived key zeroized from memory immediately after cipher construction
 - **No backdoors**: There is no password recovery mechanism. If you forget your lock password, the encrypted vault is unrecoverable. This is by design.
 
 ### Storage

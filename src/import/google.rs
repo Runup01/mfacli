@@ -117,9 +117,17 @@ fn parse_otp_parameters(data: &[u8]) -> Result<OtpEntry, Box<dyn std::error::Err
     let secret_b32 = base32::encode(base32::Alphabet::Rfc4648 { padding: false }, &secret);
 
     Ok(OtpEntry {
-        name: if name.is_empty() { "unknown".to_string() } else { name },
+        name: if name.is_empty() {
+            "unknown".to_string()
+        } else {
+            name
+        },
         secret: secret_b32,
-        issuer: if issuer.is_empty() { None } else { Some(issuer) },
+        issuer: if issuer.is_empty() {
+            None
+        } else {
+            Some(issuer)
+        },
         algorithm,
         digits,
         period: 30,

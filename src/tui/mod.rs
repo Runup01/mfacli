@@ -7,10 +7,10 @@ use crate::storage::vault::Vault;
 use crate::utils::clipboard;
 use crate::weather;
 use crossterm::{
-    event::{MouseButton, MouseEventKind},
     event::{self, Event, KeyCode, KeyEventKind},
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     event::{DisableMouseCapture, EnableMouseCapture},
+    event::{MouseButton, MouseEventKind},
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
 use ratatui::{
@@ -27,48 +27,94 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 /// Terminal display width: CJK = 2, most others = 1.
 /// Handles "…" (U+2026) as 1-width (matches most terminal fonts).
 fn tw(s: &str) -> usize {
-    s.chars().map(|c| {
-        let cp = c as u32;
-        if cp == 0x2026 || cp == 0x2022 || cp == 0x00B7 { 1 } // … • ·
-        else if cp >= 0x1100 && (
-            cp <= 0x115f || cp == 0x2329 || cp == 0x232a ||
-            (cp >= 0x2e80 && cp <= 0x303e) ||
-            (cp >= 0x3040 && cp <= 0x33bf) ||
-            (cp >= 0x3400 && cp <= 0x4dbf) ||
-            (cp >= 0x4e00 && cp <= 0xa4cf) ||
-            (cp >= 0xac00 && cp <= 0xd7af) ||
-            (cp >= 0xf900 && cp <= 0xfaff) ||
-            (cp >= 0xfe30 && cp <= 0xfe6f) ||
-            (cp >= 0xff01 && cp <= 0xff60) ||
-            (cp >= 0xffe0 && cp <= 0xffe6) ||
-            (cp >= 0x20000 && cp <= 0x2fffd) ||
-            (cp >= 0x30000 && cp <= 0x3fffd)
-        ) { 2 } else { 1 }
-    }).sum()
+    s.chars()
+        .map(|c| {
+            let cp = c as u32;
+            if cp == 0xFE0F {
+                0 // VS16: width carried by the base emoji
+            } else if cp == 0x2026 || cp == 0x2022 || cp == 0x00B7 {
+                1
+            }
+            // … • ·
+            else if cp >= 0x1100
+                && (cp <= 0x115f
+                    || cp == 0x2329
+                    || cp == 0x232a
+                    || (cp >= 0x2e80 && cp <= 0x303e)
+                    || (cp >= 0x3040 && cp <= 0x33bf)
+                    || (cp >= 0x3400 && cp <= 0x4dbf)
+                    || (cp >= 0x4e00 && cp <= 0xa4cf)
+                    || (cp >= 0xac00 && cp <= 0xd7af)
+                    || (cp >= 0xf900 && cp <= 0xfaff)
+                    || (cp >= 0xfe30 && cp <= 0xfe6f)
+                    || (cp >= 0xff01 && cp <= 0xff60)
+                    || (cp >= 0xffe0 && cp <= 0xffe6)
+                    || (cp >= 0x20000 && cp <= 0x2fffd)
+                    || (cp >= 0x30000 && cp <= 0x3fffd)
+                    || (cp >= 0x2300 && cp <= 0x23ff)
+                    || (cp >= 0x2600 && cp <= 0x27bf)
+                    || (cp >= 0x1F300 && cp <= 0x1FAFF))
+            {
+                2
+            } else {
+                1
+            }
+        })
+        .sum()
 }
 
 fn trunc(s: &str, max: usize) -> String {
-    if tw(s) <= max { return s.to_string(); }
-    let t: String = s.chars().scan(0usize, |w, c| {
-        let cp = c as u32;
-        let cw = if cp == 0x2026 || cp == 0x2022 || cp == 0x00B7 { 1 }
-            else if cp >= 0x1100 && (cp <= 0x115f || cp == 0x2329 || cp == 0x232a ||
-                (cp >= 0x2e80 && cp <= 0x303e) || (cp >= 0x3040 && cp <= 0x33bf) ||
-                (cp >= 0x3400 && cp <= 0x4dbf) || (cp >= 0x4e00 && cp <= 0xa4cf) ||
-                (cp >= 0xac00 && cp <= 0xd7af) || (cp >= 0xf900 && cp <= 0xfaff) ||
-                (cp >= 0xfe30 && cp <= 0xfe6f) || (cp >= 0xff01 && cp <= 0xff60) ||
-                (cp >= 0xffe0 && cp <= 0xffe6) || (cp >= 0x20000 && cp <= 0x2fffd) ||
-                (cp >= 0x30000 && cp <= 0x3fffd)) { 2 } else { 1 };
-        if *w + cw > max - 1 { None } else { *w += cw; Some(c) }
-    }).collect();
+    if tw(s) <= max {
+        return s.to_string();
+    }
+    let t: String = s
+        .chars()
+        .scan(0usize, |w, c| {
+            let cp = c as u32;
+            let cw = if cp == 0x2026 || cp == 0x2022 || cp == 0x00B7 {
+                1
+            } else if cp >= 0x1100
+                && (cp <= 0x115f
+                    || cp == 0x2329
+                    || cp == 0x232a
+                    || (cp >= 0x2e80 && cp <= 0x303e)
+                    || (cp >= 0x3040 && cp <= 0x33bf)
+                    || (cp >= 0x3400 && cp <= 0x4dbf)
+                    || (cp >= 0x4e00 && cp <= 0xa4cf)
+                    || (cp >= 0xac00 && cp <= 0xd7af)
+                    || (cp >= 0xf900 && cp <= 0xfaff)
+                    || (cp >= 0xfe30 && cp <= 0xfe6f)
+                    || (cp >= 0xff01 && cp <= 0xff60)
+                    || (cp >= 0xffe0 && cp <= 0xffe6)
+                    || (cp >= 0x20000 && cp <= 0x2fffd)
+                    || (cp >= 0x30000 && cp <= 0x3fffd)
+                    || (cp >= 0x2300 && cp <= 0x23ff)
+                    || (cp >= 0x2600 && cp <= 0x27bf)
+                    || (cp >= 0x1F300 && cp <= 0x1FAFF))
+            {
+                2
+            } else {
+                1
+            };
+            if *w + cw > max - 1 {
+                None
+            } else {
+                *w += cw;
+                Some(c)
+            }
+        })
+        .collect();
     format!("{}…", t)
 }
 
 fn pad(s: &str, w: usize) -> String {
     let dw = tw(s);
-    if dw >= w { s.to_string() } else { format!("{}{}", s, " ".repeat(w - dw)) }
+    if dw >= w {
+        s.to_string()
+    } else {
+        format!("{}{}", s, " ".repeat(w - dw))
+    }
 }
-
 
 #[derive(PartialEq)]
 enum Mode {
@@ -112,7 +158,8 @@ pub struct TuiApp {
     qr_lines: Vec<String>,
     // Mouse double-click tracking
     last_click_time: Option<Instant>,
-    list_area: Rect,}
+    list_area: Rect,
+}
 
 enum StatusKind {
     Success,
@@ -168,7 +215,8 @@ impl TuiApp {
             settings_cursor: 0,
             qr_lines: Vec::new(),
             last_click_time: None,
-            list_area: Rect::default(),        }
+            list_area: Rect::default(),
+        }
     }
 
     pub fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -180,7 +228,8 @@ impl TuiApp {
 
         let result = self.event_loop(&mut terminal);
 
-        stdout().execute(DisableMouseCapture)?;        disable_raw_mode()?;
+        stdout().execute(DisableMouseCapture)?;
+        disable_raw_mode()?;
         stdout().execute(LeaveAlternateScreen)?;
         terminal.show_cursor()?;
 
@@ -212,28 +261,30 @@ impl TuiApp {
                     Event::Mouse(mouse)
                         if mouse.kind == MouseEventKind::Down(MouseButton::Left) =>
                     {
-                            let now = Instant::now();
-                            // Double-click detection: two clicks within 400ms
-                            if let Some(last) = self.last_click_time {
-                                if now.duration_since(last) < Duration::from_millis(400) {
-                                    // Map mouse Y to list item index
-                                    let area = self.list_area;
-                                    if mouse.row > area.y && mouse.row < area.y + area.height - 1
-                                        && mouse.column >= area.x && mouse.column < area.x + area.width
-                                    {
-                                        let idx = (mouse.row - area.y - 1) as usize;
-                                        if idx < self.entries.len() {
-                                            self.list_state.select(Some(idx));
-                                            self.copy_selected();
-                                        }
+                        let now = Instant::now();
+                        // Double-click detection: two clicks within 400ms
+                        if let Some(last) = self.last_click_time {
+                            if now.duration_since(last) < Duration::from_millis(400) {
+                                // Map mouse Y to list item index
+                                let area = self.list_area;
+                                if mouse.row > area.y
+                                    && mouse.row < area.y + area.height - 1
+                                    && mouse.column >= area.x
+                                    && mouse.column < area.x + area.width
+                                {
+                                    let idx = (mouse.row - area.y - 1) as usize;
+                                    if idx < self.entries.len() {
+                                        self.list_state.select(Some(idx));
+                                        self.copy_selected();
                                     }
-                                    self.last_click_time = None;
-                                } else {
-                                    self.last_click_time = Some(now);
                                 }
+                                self.last_click_time = None;
                             } else {
                                 self.last_click_time = Some(now);
                             }
+                        } else {
+                            self.last_click_time = Some(now);
+                        }
                     }
                     _ => {}
                 }
@@ -278,12 +329,19 @@ impl TuiApp {
             Mode::ConfirmDelete => self.handle_confirm_delete(key),
             Mode::Settings => self.handle_settings(key),
             Mode::ViewQR => {
-                if matches!(key, KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('v') | KeyCode::Enter) {
+                if matches!(
+                    key,
+                    KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('v') | KeyCode::Enter
+                ) {
                     self.mode = Mode::Normal;
                 }
             }
             Mode::EditMenu => self.handle_edit_menu(key),
-            Mode::EditSecret | Mode::EditName | Mode::EditIssuer | Mode::ImportPath | Mode::ExportPath => self.handle_input(key),
+            Mode::EditSecret
+            | Mode::EditName
+            | Mode::EditIssuer
+            | Mode::ImportPath
+            | Mode::ExportPath => self.handle_input(key),
         }
     }
 
@@ -296,13 +354,17 @@ impl TuiApp {
             KeyCode::Char('a') => {
                 self.mode = Mode::AddName;
                 self.input_buffer.clear();
-                self.status_message = Some(("Enter name for new entry:".to_string(), StatusKind::Info));
+                self.status_message =
+                    Some(("Enter name for new entry:".to_string(), StatusKind::Info));
             }
             KeyCode::Char('d') => {
                 if self.list_state.selected().is_some() {
                     self.mode = Mode::ConfirmDelete;
-                    let name = self.entries[self.list_state.selected().unwrap()].name.clone();
-                    self.status_message = Some((format!("Delete '{}'? [y/N]", name), StatusKind::Error));
+                    let name = self.entries[self.list_state.selected().unwrap()]
+                        .name
+                        .clone();
+                    self.status_message =
+                        Some((format!("Delete '{}'? [y/N]", name), StatusKind::Error));
                 }
             }
             KeyCode::Char('r') => {
@@ -349,13 +411,17 @@ impl TuiApp {
                         self.add_name = value;
                         self.input_buffer.clear();
                         self.mode = Mode::AddSecret;
-                        self.status_message = Some(("Enter secret (base32):".to_string(), StatusKind::Info));
+                        self.status_message =
+                            Some(("Enter secret (base32):".to_string(), StatusKind::Info));
                     }
                     Mode::AddSecret => {
                         self.add_secret = value;
                         self.input_buffer.clear();
                         self.mode = Mode::AddIssuer;
-                        self.status_message = Some(("Enter issuer (optional, Enter to skip):".to_string(), StatusKind::Info));
+                        self.status_message = Some((
+                            "Enter issuer (optional, Enter to skip):".to_string(),
+                            StatusKind::Info,
+                        ));
                     }
                     Mode::AddIssuer => {
                         self.add_issuer = value;
@@ -404,7 +470,8 @@ impl TuiApp {
                     } else if idx >= self.entries.len() {
                         self.list_state.select(Some(self.entries.len() - 1));
                     }
-                    self.status_message = Some((format!("Deleted '{}'", name), StatusKind::Success));
+                    self.status_message =
+                        Some((format!("Deleted '{}'", name), StatusKind::Success));
                 }
                 self.mode = Mode::Normal;
             }
@@ -462,8 +529,17 @@ impl TuiApp {
             }
             4 => {
                 // City: cycle between auto and common cities
-                let cities: Vec<Option<String>> = vec![None, Some("Beijing".into()), Some("Shanghai".into()), Some("Shenzhen".into()), Some("Guangzhou".into())];
-                let current_idx = cities.iter().position(|c| *c == self.config.city).unwrap_or(0);
+                let cities: Vec<Option<String>> = vec![
+                    None,
+                    Some("Beijing".into()),
+                    Some("Shanghai".into()),
+                    Some("Shenzhen".into()),
+                    Some("Guangzhou".into()),
+                ];
+                let current_idx = cities
+                    .iter()
+                    .position(|c| *c == self.config.city)
+                    .unwrap_or(0);
                 let next_idx = (current_idx + 1) % cities.len();
                 self.config.city = cities[next_idx].clone();
                 let display = self.config.city.as_deref().unwrap_or("Auto (IP)");
@@ -475,13 +551,19 @@ impl TuiApp {
                 }
                 // Re-fetch with new city
                 self.weather_rx = Some(weather::spawn_weather_fetch(self.config.city.clone()));
-                self.status_message = Some((format!("City → {} (fetching weather...)", display), StatusKind::Success));
+                self.status_message = Some((
+                    format!("City → {} (fetching weather...)", display),
+                    StatusKind::Success,
+                ));
             }
             5 => {
                 // Import
                 self.input_buffer.clear();
                 self.mode = Mode::ImportPath;
-                self.status_message = Some(("Import file path (otpauth/json/csv):".to_string(), StatusKind::Info));
+                self.status_message = Some((
+                    "Import file path (otpauth/json/csv):".to_string(),
+                    StatusKind::Info,
+                ));
             }
             6 => {
                 // Export
@@ -491,7 +573,10 @@ impl TuiApp {
             }
             7 => {
                 // Toggle encryption info
-                self.status_message = Some(("Use CLI: mfa lock / mfa unlock (requires password setup)".to_string(), StatusKind::Info));
+                self.status_message = Some((
+                    "Use CLI: mfa lock / mfa unlock (requires password setup)".to_string(),
+                    StatusKind::Info,
+                ));
             }
             8 => {
                 self.mode = Mode::Normal;
@@ -502,7 +587,11 @@ impl TuiApp {
     }
 
     fn finish_add(&mut self) {
-        let issuer = if self.add_issuer.is_empty() { None } else { Some(self.add_issuer.clone()) };
+        let issuer = if self.add_issuer.is_empty() {
+            None
+        } else {
+            Some(self.add_issuer.clone())
+        };
         match OtpEntry::new(
             self.add_name.clone(),
             self.add_secret.clone(),
@@ -534,11 +623,15 @@ impl TuiApp {
         if let Some(idx) = self.list_state.selected() {
             let old = self.entries[idx].name.clone();
             if self.entries.iter().any(|e| e.name == new_name) {
-                self.status_message = Some((format!("'{}' already exists", new_name), StatusKind::Error));
+                self.status_message =
+                    Some((format!("'{}' already exists", new_name), StatusKind::Error));
             } else {
                 self.entries[idx].name = new_name.to_string();
                 self.save_vault();
-                self.status_message = Some((format!("Renamed '{}' → '{}'", old, new_name), StatusKind::Success));
+                self.status_message = Some((
+                    format!("Renamed '{}' → '{}'", old, new_name),
+                    StatusKind::Success,
+                ));
             }
         }
         self.mode = Mode::Normal;
@@ -554,7 +647,8 @@ impl TuiApp {
                         self.mode = Mode::ViewQR;
                     }
                     Err(_) => {
-                        self.status_message = Some(("QR generation failed".to_string(), StatusKind::Error));
+                        self.status_message =
+                            Some(("QR generation failed".to_string(), StatusKind::Error));
                     }
                 }
             }
@@ -584,7 +678,8 @@ impl TuiApp {
                 if let Some(idx) = self.list_state.selected() {
                     self.input_buffer = self.entries[idx].secret.clone();
                     self.mode = Mode::EditSecret;
-                    self.status_message = Some(("New secret (base32):".to_string(), StatusKind::Info));
+                    self.status_message =
+                        Some(("New secret (base32):".to_string(), StatusKind::Info));
                 }
             }
             _ => {}
@@ -598,12 +693,16 @@ impl TuiApp {
         }
         if let Some(idx) = self.list_state.selected() {
             if self.entries.iter().any(|e| e.name == new_name) {
-                self.status_message = Some((format!("'{}' already exists", new_name), StatusKind::Error));
+                self.status_message =
+                    Some((format!("'{}' already exists", new_name), StatusKind::Error));
             } else {
                 let old = self.entries[idx].name.clone();
                 self.entries[idx].name = new_name.to_string();
                 self.save_vault();
-                self.status_message = Some((format!("Renamed '{}' → '{}'", old, new_name), StatusKind::Success));
+                self.status_message = Some((
+                    format!("Renamed '{}' → '{}'", old, new_name),
+                    StatusKind::Success,
+                ));
             }
         }
         self.mode = Mode::Normal;
@@ -611,9 +710,16 @@ impl TuiApp {
 
     fn finish_edit_issuer(&mut self, new_issuer: &str) {
         if let Some(idx) = self.list_state.selected() {
-            self.entries[idx].issuer = if new_issuer.is_empty() { None } else { Some(new_issuer.to_string()) };
+            self.entries[idx].issuer = if new_issuer.is_empty() {
+                None
+            } else {
+                Some(new_issuer.to_string())
+            };
             self.save_vault();
-            self.status_message = Some((format!("Updated issuer for '{}'", self.entries[idx].name), StatusKind::Success));
+            self.status_message = Some((
+                format!("Updated issuer for '{}'", self.entries[idx].name),
+                StatusKind::Success,
+            ));
         }
         self.mode = Mode::Normal;
     }
@@ -632,7 +738,10 @@ impl TuiApp {
                     }
                 }
                 self.save_vault();
-                self.status_message = Some((format!("Imported {} entries from {}", count, path), StatusKind::Success));
+                self.status_message = Some((
+                    format!("Imported {} entries from {}", count, path),
+                    StatusKind::Success,
+                ));
             }
             Err(e) => {
                 self.status_message = Some((format!("Import failed: {}", e), StatusKind::Error));
@@ -642,11 +751,17 @@ impl TuiApp {
     }
 
     fn finish_export(&mut self, path: &str) {
-        if path.is_empty() { self.mode = Mode::Normal; return; }
+        if path.is_empty() {
+            self.mode = Mode::Normal;
+            return;
+        }
         let lower = path.to_lowercase();
         // Pick format by extension so TUI export stays symmetric with import.
         if lower.ends_with(".enc") || lower.ends_with(".encrypted") {
-            self.status_message = Some(("Encrypted export needs a password — use CLI: mfa export --format encrypted".into(), StatusKind::Info));
+            self.status_message = Some((
+                "Encrypted export needs a password — use CLI: mfa export --format encrypted".into(),
+                StatusKind::Info,
+            ));
             self.mode = Mode::Normal;
             return;
         }
@@ -655,20 +770,44 @@ impl TuiApp {
                 version: crate::storage::models::ExportFile::VERSION,
                 entries: self.entries.clone(),
             };
-            (serde_json::to_string_pretty(&file).unwrap_or_default(), "json")
+            (
+                serde_json::to_string_pretty(&file).unwrap_or_default(),
+                "json",
+            )
         } else {
-            let lines: Vec<String> = self.entries.iter()
+            let lines: Vec<String> = self
+                .entries
+                .iter()
                 .filter(|e| e.otp_type != "steam")
                 .map(|e| e.to_otpauth_uri())
                 .collect();
-            (if lines.is_empty() { String::new() } else { lines.join("\n") + "\n" }, "otpauth")
+            (
+                if lines.is_empty() {
+                    String::new()
+                } else {
+                    lines.join("\n") + "\n"
+                },
+                "otpauth",
+            )
         };
         match std::fs::write(path, &data) {
             Ok(()) => {
-                let n = if fmt == "json" { self.entries.len() } else { self.entries.iter().filter(|e| e.otp_type != "steam").count() };
-                self.status_message = Some((format!("Exported {} entries as {} → {}", n, fmt, path), StatusKind::Success));
+                let n = if fmt == "json" {
+                    self.entries.len()
+                } else {
+                    self.entries
+                        .iter()
+                        .filter(|e| e.otp_type != "steam")
+                        .count()
+                };
+                self.status_message = Some((
+                    format!("Exported {} entries as {} → {}", n, fmt, path),
+                    StatusKind::Success,
+                ));
             }
-            Err(e) => { self.status_message = Some((format!("Export failed: {}", e), StatusKind::Error)); }
+            Err(e) => {
+                self.status_message = Some((format!("Export failed: {}", e), StatusKind::Error));
+            }
         }
         self.mode = Mode::Normal;
     }
@@ -677,11 +816,18 @@ impl TuiApp {
         if let Some(idx) = self.list_state.selected() {
             let normalized = new_secret.replace([' ', '-'], "").to_uppercase();
             if base32::decode(base32::Alphabet::Rfc4648 { padding: false }, &normalized).is_none() {
-                self.status_message = Some(("Invalid base32 secret (allowed: A-Z and 2-7; common typos 0->O, 1->I, 8->B)".to_string(), StatusKind::Error));
+                self.status_message = Some((
+                    "Invalid base32 secret (allowed: A-Z and 2-7; common typos 0->O, 1->I, 8->B)"
+                        .to_string(),
+                    StatusKind::Error,
+                ));
             } else {
                 self.entries[idx].secret = normalized;
                 self.save_vault();
-                self.status_message = Some((format!("Updated secret for '{}'", self.entries[idx].name), StatusKind::Success));
+                self.status_message = Some((
+                    format!("Updated secret for '{}'", self.entries[idx].name),
+                    StatusKind::Success,
+                ));
             }
         }
         self.mode = Mode::Normal;
@@ -713,11 +859,13 @@ impl TuiApp {
                             self.mood_timer = Some(Instant::now());
                         }
                         Err(e) => {
-                            self.status_message = Some((format!("✗ 剪贴板失败: {}", e), StatusKind::Error));
+                            self.status_message =
+                                Some((format!("✗ 剪贴板失败: {}", e), StatusKind::Error));
                         }
                     },
                     Err(e) => {
-                        self.status_message = Some((format!("✗ 验证码生成失败: {}", e), StatusKind::Error));
+                        self.status_message =
+                            Some((format!("✗ 验证码生成失败: {}", e), StatusKind::Error));
                     }
                 }
             }
@@ -725,16 +873,28 @@ impl TuiApp {
     }
 
     fn move_up(&mut self) {
-        if self.entries.is_empty() { return; }
+        if self.entries.is_empty() {
+            return;
+        }
         let current = self.list_state.selected().unwrap_or(0);
-        let prev = if current == 0 { self.entries.len() - 1 } else { current - 1 };
+        let prev = if current == 0 {
+            self.entries.len() - 1
+        } else {
+            current - 1
+        };
         self.list_state.select(Some(prev));
     }
 
     fn move_down(&mut self) {
-        if self.entries.is_empty() { return; }
+        if self.entries.is_empty() {
+            return;
+        }
         let current = self.list_state.selected().unwrap_or(0);
-        let next = if current >= self.entries.len() - 1 { 0 } else { current + 1 };
+        let next = if current >= self.entries.len() - 1 {
+            0
+        } else {
+            current + 1
+        };
         self.list_state.select(Some(next));
     }
 
@@ -746,14 +906,15 @@ impl TuiApp {
             .constraints([
                 Constraint::Length(3),  // header
                 Constraint::Length(10), // pet
-                Constraint::Min(1),    // list
-                Constraint::Length(3), // status / input
+                Constraint::Min(1),     // list
+                Constraint::Length(3),  // status / input
             ])
             .split(f.area());
 
         self.render_header(f, chunks[0]);
         self.render_pet(f, chunks[1]);
-        self.list_area = chunks[2];        self.render_list(f, chunks[2]);
+        self.list_area = chunks[2];
+        self.render_list(f, chunks[2]);
         self.render_footer(f, chunks[3]);
 
         // QR overlay
@@ -771,24 +932,38 @@ impl TuiApp {
         let mut spans = vec![
             Span::styled(" ", Style::default()),
             Span::styled(
-                format!("{} {}", self.almanac_info.date_str, self.almanac_info.weekday),
-                Style::default().fg(Color::LightCyan).add_modifier(Modifier::BOLD),
+                format!(
+                    "{} {}",
+                    self.almanac_info.date_str, self.almanac_info.weekday
+                ),
+                Style::default()
+                    .fg(Color::LightCyan)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 format!("  {}", self.almanac_info.time_str),
-                Style::default().fg(Color::LightYellow).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::LightYellow)
+                    .add_modifier(Modifier::BOLD),
             ),
         ];
 
         if self.config.show_bazi {
             spans.push(Span::styled("  ┃", Style::default().fg(Color::DarkGray)));
             spans.push(Span::styled(
-                format!("  {}年{}月{}日", self.almanac_info.year_ganzhi, self.almanac_info.month_ganzhi, self.almanac_info.day_ganzhi),
+                format!(
+                    "  {}年{}月{}日",
+                    self.almanac_info.year_ganzhi,
+                    self.almanac_info.month_ganzhi,
+                    self.almanac_info.day_ganzhi
+                ),
                 Style::default().fg(Color::Yellow),
             ));
             spans.push(Span::styled(
                 format!("  {}日", self.almanac_info.officer_name),
-                Style::default().fg(Color::LightMagenta).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::LightMagenta)
+                    .add_modifier(Modifier::BOLD),
             ));
         }
 
@@ -800,8 +975,11 @@ impl TuiApp {
             ));
         }
 
-        let header = Paragraph::new(Line::from(spans))
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)));
+        let header = Paragraph::new(Line::from(spans)).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        );
         f.render_widget(header, area);
     }
 
@@ -815,61 +993,137 @@ impl TuiApp {
 
         let mut text_lines: Vec<Line> = lines
             .iter()
-            .map(|l| Line::from(Span::styled(format!(" {}", l), Style::default().fg(Color::LightGreen))))
+            .map(|l| {
+                Line::from(Span::styled(
+                    format!(" {}", l),
+                    Style::default().fg(Color::LightGreen),
+                ))
+            })
             .collect();
 
         if self.config.show_bazi {
             text_lines.push(Line::from(vec![
-                Span::styled(format!(" [{}] ", self.config.pet), Style::default().fg(Color::DarkGray)),
-                Span::styled(format!("宜:{} ", self.almanac_info.yi), Style::default().fg(Color::LightGreen)),
-                Span::styled(format!("忌:{}", self.almanac_info.ji), Style::default().fg(Color::LightRed)),
+                Span::styled(
+                    format!(" [{}] ", self.config.pet),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(
+                    format!("宜:{} ", self.almanac_info.yi),
+                    Style::default().fg(Color::LightGreen),
+                ),
+                Span::styled(
+                    format!("忌:{}", self.almanac_info.ji),
+                    Style::default().fg(Color::LightRed),
+                ),
             ]));
         }
 
-        let widget = Paragraph::new(text_lines)
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)));
+        let widget = Paragraph::new(text_lines).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        );
         f.render_widget(widget, area);
     }
 
     fn render_list(&mut self, f: &mut Frame, area: Rect) {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
 
         // Adaptive column widths
-        let name_col = self.entries.iter().map(|e| tw(&trunc(&e.name, 28))).max().unwrap_or(4).max(4) + 1;
-        let issuer_col = self.entries.iter().map(|e| tw(&trunc(e.issuer.as_deref().unwrap_or(""), 28))).max().unwrap_or(4).max(4) + 1;
+        let name_col = self
+            .entries
+            .iter()
+            .map(|e| tw(&trunc(&e.name, 28)))
+            .max()
+            .unwrap_or(16)
+            .max(16)
+            + 1;
+        let issuer_col = self
+            .entries
+            .iter()
+            .map(|e| tw(&trunc(e.issuer.as_deref().unwrap_or(""), 28)))
+            .max()
+            .unwrap_or(12)
+            .max(12)
+            + 1;
 
-        let items: Vec<ListItem> = self.entries.iter().map(|entry| {
-            let code = otp::generate_code(entry).unwrap_or_else(|_| "------".to_string());
-            let remaining = entry.period - (now % entry.period);
-            let progress = remaining as f64 / entry.period as f64;
-            let bar_width = 10;
-            let filled = (progress * bar_width as f64) as usize;
-            let bar: String = "●".repeat(filled) + &"○".repeat(bar_width - filled);
+        let selected = self.list_state.selected().unwrap_or(0);
+        let items: Vec<ListItem> = self
+            .entries
+            .iter()
+            .enumerate()
+            .map(|(idx, entry)| {
+                let sel = idx == selected;
+                let code = otp::generate_code(entry).unwrap_or_else(|_| "------".to_string());
+                let remaining = entry.period - (now % entry.period);
+                let progress = remaining as f64 / entry.period as f64;
+                let bar_width = 10;
+                let filled = (progress * bar_width as f64) as usize;
+                let bar: String = "●".repeat(filled) + &"○".repeat(bar_width - filled);
 
-            let code_style = if remaining <= 5 {
-                Style::default().fg(Color::LightRed).add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::LightGreen).add_modifier(Modifier::BOLD)
-            };
+                let code_style = if remaining <= 5 {
+                    Style::default()
+                        .fg(Color::LightRed)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                        .fg(Color::LightGreen)
+                        .add_modifier(Modifier::BOLD)
+                };
 
-            let name_d = pad(&trunc(&entry.name, 28), name_col);
-            let issuer_d = pad(&trunc(entry.issuer.as_deref().unwrap_or(""), 28), issuer_col);
+                let name_d = pad(&trunc(&entry.name, 28), name_col);
+                let issuer_d = pad(
+                    &trunc(entry.issuer.as_deref().unwrap_or(""), 28),
+                    issuer_col,
+                );
 
-            let line = Line::from(vec![
-                Span::styled(name_d, Style::default().fg(Color::LightBlue).add_modifier(Modifier::BOLD)),
-                Span::styled(issuer_d, Style::default().fg(Color::LightMagenta)),
-                Span::styled(pad(&code, 8), code_style),
-                Span::styled(format!("{} ", bar), if remaining <= 5 { Style::default().fg(Color::LightRed) } else { Style::default().fg(Color::LightCyan) }),
-                Span::styled(format!("{:>2}s", remaining), if remaining <= 5 { Style::default().fg(Color::LightRed) } else { Style::default().fg(Color::DarkGray) }),
-            ]);
+                let line = Line::from(vec![
+                    Span::styled(
+                        if sel { "▸ " } else { "  " },
+                        Style::default().fg(Color::Yellow),
+                    ),
+                    Span::styled(
+                        name_d,
+                        Style::default()
+                            .fg(Color::LightBlue)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(issuer_d, Style::default().fg(Color::LightMagenta)),
+                    Span::styled(pad(&code, 8), code_style),
+                    Span::styled(
+                        format!("{} ", bar),
+                        if remaining <= 5 {
+                            Style::default().fg(Color::LightRed)
+                        } else {
+                            Style::default().fg(Color::LightCyan)
+                        },
+                    ),
+                    Span::styled(
+                        format!("{:>2}s", remaining),
+                        if remaining <= 5 {
+                            Style::default().fg(Color::LightRed)
+                        } else {
+                            Style::default().fg(Color::DarkGray)
+                        },
+                    ),
+                ]);
 
-            ListItem::new(line)
-        }).collect();
+                ListItem::new(line)
+            })
+            .collect();
 
         let list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)).title(" Tokens "))
-            .highlight_style(Style::default())
-            .highlight_symbol("▸ ");
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::DarkGray))
+                    .title(" Tokens "),
+            )
+            .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+            .highlight_symbol("");
 
         f.render_stateful_widget(list, area, &mut self.list_state);
     }
@@ -885,16 +1139,33 @@ impl TuiApp {
                     _ => "",
                 };
                 Line::from(vec![
-                    Span::styled(format!(" {}: ", label), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        format!(" {}: ", label),
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                     Span::styled(&self.input_buffer, Style::default().fg(Color::LightCyan)),
                     Span::styled("█", Style::default().fg(Color::LightCyan)),
-                    Span::styled("  [Enter] confirm  [Esc] cancel", Style::default().fg(Color::DarkGray)),
+                    Span::styled(
+                        "  [Enter] confirm  [Esc] cancel",
+                        Style::default().fg(Color::DarkGray),
+                    ),
                 ])
             }
             Mode::ConfirmDelete => {
-                let msg = self.status_message.as_ref().map(|(m, _)| m.clone()).unwrap_or_default();
+                let msg = self
+                    .status_message
+                    .as_ref()
+                    .map(|(m, _)| m.clone())
+                    .unwrap_or_default();
                 Line::from(vec![
-                    Span::styled(format!(" {}", msg), Style::default().fg(Color::LightRed).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        format!(" {}", msg),
+                        Style::default()
+                            .fg(Color::LightRed)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                     Span::styled("  [y] yes  [any] no", Style::default().fg(Color::DarkGray)),
                 ])
             }
@@ -902,9 +1173,27 @@ impl TuiApp {
                 let item = SETTINGS_ITEMS[self.settings_cursor];
                 let value = match self.settings_cursor {
                     0 => self.config.pet.as_str(),
-                    1 => if self.config.show_weather { "ON" } else { "OFF" },
-                    2 => if self.config.show_bazi { "ON" } else { "OFF" },
-                    3 => if self.config.show_pet { "ON" } else { "OFF" },
+                    1 => {
+                        if self.config.show_weather {
+                            "ON"
+                        } else {
+                            "OFF"
+                        }
+                    }
+                    2 => {
+                        if self.config.show_bazi {
+                            "ON"
+                        } else {
+                            "OFF"
+                        }
+                    }
+                    3 => {
+                        if self.config.show_pet {
+                            "ON"
+                        } else {
+                            "OFF"
+                        }
+                    }
                     4 => self.config.city.as_deref().unwrap_or("Auto (IP)"),
                     5 => "enter file path",
                     6 => "enter file path",
@@ -914,25 +1203,52 @@ impl TuiApp {
                 Line::from(vec![
                     Span::styled(" ⚙ ", Style::default().fg(Color::Yellow)),
                     Span::styled(format!("{}: ", item), Style::default().fg(Color::LightCyan)),
-                    Span::styled(value, Style::default().fg(Color::LightCyan).add_modifier(Modifier::BOLD)),
-                    Span::styled("  [↑↓] select  [Enter] toggle  [Esc] close", Style::default().fg(Color::DarkGray)),
+                    Span::styled(
+                        value,
+                        Style::default()
+                            .fg(Color::LightCyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        "  [↑↓] select  [Enter] toggle  [Esc] close",
+                        Style::default().fg(Color::DarkGray),
+                    ),
                 ])
             }
-            Mode::ViewQR => {
-                Line::from(Span::styled(" [Esc/v] close QR view", Style::default().fg(Color::DarkGray)))
-            }
-            Mode::EditMenu => {
-                Line::from(vec![
-                    Span::styled(" Edit: ", Style::default().fg(Color::LightMagenta).add_modifier(Modifier::BOLD)),
-                    Span::styled("n", Style::default().fg(Color::LightCyan).add_modifier(Modifier::BOLD)),
-                    Span::styled(" 名称  ", Style::default().fg(Color::DarkGray)),
-                    Span::styled("i", Style::default().fg(Color::LightYellow).add_modifier(Modifier::BOLD)),
-                    Span::styled(" 发行方  ", Style::default().fg(Color::DarkGray)),
-                    Span::styled("s", Style::default().fg(Color::LightGreen).add_modifier(Modifier::BOLD)),
-                    Span::styled(" 密钥  ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(" [Esc] cancel", Style::default().fg(Color::DarkGray)),
-                ])
-            }
+            Mode::ViewQR => Line::from(Span::styled(
+                " [Esc/v] close QR view",
+                Style::default().fg(Color::DarkGray),
+            )),
+            Mode::EditMenu => Line::from(vec![
+                Span::styled(
+                    " Edit: ",
+                    Style::default()
+                        .fg(Color::LightMagenta)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "n",
+                    Style::default()
+                        .fg(Color::LightCyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" 名称  ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    "i",
+                    Style::default()
+                        .fg(Color::LightYellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" 发行方  ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    "s",
+                    Style::default()
+                        .fg(Color::LightGreen)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" 密钥  ", Style::default().fg(Color::DarkGray)),
+                Span::styled(" [Esc] cancel", Style::default().fg(Color::DarkGray)),
+            ]),
             Mode::EditSecret | Mode::EditName | Mode::EditIssuer => {
                 let label = match &self.mode {
                     Mode::EditName => "Name",
@@ -940,37 +1256,61 @@ impl TuiApp {
                     _ => "Secret",
                 };
                 Line::from(vec![
-                    Span::styled(format!(" {}: ", label), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        format!(" {}: ", label),
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                     Span::styled(&self.input_buffer, Style::default().fg(Color::LightCyan)),
                     Span::styled("█", Style::default().fg(Color::LightCyan)),
-                    Span::styled("  [Enter] save  [Esc] cancel", Style::default().fg(Color::DarkGray)),
+                    Span::styled(
+                        "  [Enter] save  [Esc] cancel",
+                        Style::default().fg(Color::DarkGray),
+                    ),
                 ])
             }
-            Mode::ImportPath => {
-                Line::from(vec![
-                    Span::styled(" Import: ", Style::default().fg(Color::LightYellow).add_modifier(Modifier::BOLD)),
-                    Span::styled(&self.input_buffer, Style::default().fg(Color::LightCyan)),
-                    Span::styled("█", Style::default().fg(Color::LightCyan)),
-                    Span::styled("  [Enter] import  [Esc] cancel", Style::default().fg(Color::DarkGray)),
-                ])
-            }
-            Mode::ExportPath => {
-                Line::from(vec![
-                    Span::styled(" Export: ", Style::default().fg(Color::LightGreen).add_modifier(Modifier::BOLD)),
-                    Span::styled(&self.input_buffer, Style::default().fg(Color::LightCyan)),
-                    Span::styled("█", Style::default().fg(Color::LightCyan)),
-                    Span::styled("  [Enter] export  [Esc] cancel", Style::default().fg(Color::DarkGray)),
-                ])
-            }
+            Mode::ImportPath => Line::from(vec![
+                Span::styled(
+                    " Import: ",
+                    Style::default()
+                        .fg(Color::LightYellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(&self.input_buffer, Style::default().fg(Color::LightCyan)),
+                Span::styled("█", Style::default().fg(Color::LightCyan)),
+                Span::styled(
+                    "  [Enter] import  [Esc] cancel",
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]),
+            Mode::ExportPath => Line::from(vec![
+                Span::styled(
+                    " Export: ",
+                    Style::default()
+                        .fg(Color::LightGreen)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(&self.input_buffer, Style::default().fg(Color::LightCyan)),
+                Span::styled("█", Style::default().fg(Color::LightCyan)),
+                Span::styled(
+                    "  [Enter] export  [Esc] cancel",
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]),
             Mode::Normal => {
-                let (msg, style) = self.status_message.as_ref().map(|(m, k)| {
-                    let style = match k {
-                        StatusKind::Success => Style::default().fg(Color::LightGreen),
-                        StatusKind::Error => Style::default().fg(Color::LightRed),
-                        StatusKind::Info => Style::default().fg(Color::DarkGray),
-                    };
-                    (m.clone(), style)
-                }).unwrap_or_default();
+                let (msg, style) = self
+                    .status_message
+                    .as_ref()
+                    .map(|(m, k)| {
+                        let style = match k {
+                            StatusKind::Success => Style::default().fg(Color::LightGreen),
+                            StatusKind::Error => Style::default().fg(Color::LightRed),
+                            StatusKind::Info => Style::default().fg(Color::DarkGray),
+                        };
+                        (m.clone(), style)
+                    })
+                    .unwrap_or_default();
 
                 {
                     let mut spans = Vec::new();
@@ -981,36 +1321,91 @@ impl TuiApp {
                     } else if let Some(idx) = self.list_state.selected() {
                         if let Some(entry) = self.entries.get(idx) {
                             spans.push(Span::styled(" ", Style::default()));
-                            spans.push(Span::styled(&entry.name, Style::default().fg(Color::LightCyan).add_modifier(Modifier::BOLD)));
+                            spans.push(Span::styled(
+                                &entry.name,
+                                Style::default()
+                                    .fg(Color::LightCyan)
+                                    .add_modifier(Modifier::BOLD),
+                            ));
                             spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
-                            spans.push(Span::styled(entry.issuer.as_deref().unwrap_or("-"), Style::default().fg(Color::LightMagenta)));
+                            spans.push(Span::styled(
+                                entry.issuer.as_deref().unwrap_or("-"),
+                                Style::default().fg(Color::LightMagenta),
+                            ));
                             spans.push(Span::styled("  ", Style::default()));
                         }
                     }
                     // Shortcuts always visible
-                    spans.push(Span::styled(" c", Style::default().fg(Color::LightGreen).add_modifier(Modifier::BOLD)));
+                    spans.push(Span::styled(
+                        " c",
+                        Style::default()
+                            .fg(Color::LightGreen)
+                            .add_modifier(Modifier::BOLD),
+                    ));
                     spans.push(Span::styled(" 复制", Style::default().fg(Color::DarkGray)));
-                    spans.push(Span::styled("  a", Style::default().fg(Color::LightYellow).add_modifier(Modifier::BOLD)));
+                    spans.push(Span::styled(
+                        "  a",
+                        Style::default()
+                            .fg(Color::LightYellow)
+                            .add_modifier(Modifier::BOLD),
+                    ));
                     spans.push(Span::styled(" 添加", Style::default().fg(Color::DarkGray)));
-                    spans.push(Span::styled("  e", Style::default().fg(Color::LightMagenta).add_modifier(Modifier::BOLD)));
+                    spans.push(Span::styled(
+                        "  e",
+                        Style::default()
+                            .fg(Color::LightMagenta)
+                            .add_modifier(Modifier::BOLD),
+                    ));
                     spans.push(Span::styled(" 编辑", Style::default().fg(Color::DarkGray)));
-                    spans.push(Span::styled("  r", Style::default().fg(Color::LightBlue).add_modifier(Modifier::BOLD)));
-                    spans.push(Span::styled(" 重命名", Style::default().fg(Color::DarkGray)));
-                    spans.push(Span::styled("  v", Style::default().fg(Color::LightCyan).add_modifier(Modifier::BOLD)));
-                    spans.push(Span::styled(" 二维码", Style::default().fg(Color::DarkGray)));
-                    spans.push(Span::styled("  d", Style::default().fg(Color::LightRed).add_modifier(Modifier::BOLD)));
+                    spans.push(Span::styled(
+                        "  r",
+                        Style::default()
+                            .fg(Color::LightBlue)
+                            .add_modifier(Modifier::BOLD),
+                    ));
+                    spans.push(Span::styled(
+                        " 重命名",
+                        Style::default().fg(Color::DarkGray),
+                    ));
+                    spans.push(Span::styled(
+                        "  v",
+                        Style::default()
+                            .fg(Color::LightCyan)
+                            .add_modifier(Modifier::BOLD),
+                    ));
+                    spans.push(Span::styled(
+                        " 二维码",
+                        Style::default().fg(Color::DarkGray),
+                    ));
+                    spans.push(Span::styled(
+                        "  d",
+                        Style::default()
+                            .fg(Color::LightRed)
+                            .add_modifier(Modifier::BOLD),
+                    ));
                     spans.push(Span::styled(" 删除", Style::default().fg(Color::DarkGray)));
-                    spans.push(Span::styled("  s", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
+                    spans.push(Span::styled(
+                        "  s",
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    ));
                     spans.push(Span::styled(" 设置", Style::default().fg(Color::DarkGray)));
-                    spans.push(Span::styled("  q", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)));
+                    spans.push(Span::styled(
+                        "  q",
+                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                    ));
                     spans.push(Span::styled(" 退出", Style::default().fg(Color::DarkGray)));
                     Line::from(spans)
                 }
             }
         };
 
-        let footer = Paragraph::new(content)
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)));
+        let footer = Paragraph::new(content).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        );
         f.render_widget(footer, area);
     }
 
@@ -1031,36 +1426,71 @@ impl TuiApp {
 
         let items: Vec<(&str, String)> = vec![
             ("Pet", self.config.pet.clone()),
-            ("Weather", if self.config.show_weather { "ON".into() } else { "OFF".into() }),
-            ("BaZi", if self.config.show_bazi { "ON".into() } else { "OFF".into() }),
-            ("Pet Display", if self.config.show_pet { "ON".into() } else { "OFF".into() }),
-            ("City", self.config.city.clone().unwrap_or_else(|| "Auto (IP)".into())),
+            (
+                "Weather",
+                if self.config.show_weather {
+                    "ON".into()
+                } else {
+                    "OFF".into()
+                },
+            ),
+            (
+                "BaZi",
+                if self.config.show_bazi {
+                    "ON".into()
+                } else {
+                    "OFF".into()
+                },
+            ),
+            (
+                "Pet Display",
+                if self.config.show_pet {
+                    "ON".into()
+                } else {
+                    "OFF".into()
+                },
+            ),
+            (
+                "City",
+                self.config
+                    .city
+                    .clone()
+                    .unwrap_or_else(|| "Auto (IP)".into()),
+            ),
             ("Import", "enter path →".into()),
             ("Export", "enter path →".into()),
             ("Encryption", "mfa lock / mfa unlock".into()),
             ("Close", "Esc".into()),
         ];
 
-        let lines: Vec<Line> = items.iter().enumerate().map(|(i, (label, value))| {
-            let selected = i == self.settings_cursor;
-            let marker = if selected { "  ▸ " } else { "    " };
-            let label_style = if selected {
-                Style::default().fg(Color::LightCyan).add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::DarkGray)
-            };
-            let value_style = if selected {
-                Style::default().fg(Color::LightYellow).add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::LightGreen)
-            };
+        let lines: Vec<Line> = items
+            .iter()
+            .enumerate()
+            .map(|(i, (label, value))| {
+                let selected = i == self.settings_cursor;
+                let marker = if selected { "  ▸ " } else { "    " };
+                let label_style = if selected {
+                    Style::default()
+                        .fg(Color::LightCyan)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::DarkGray)
+                };
+                let value_style = if selected {
+                    Style::default()
+                        .fg(Color::LightYellow)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::LightGreen)
+                };
 
-            Line::from(vec![
-                Span::styled(marker, Style::default().fg(Color::LightCyan)),
-                Span::styled(format!("{:<14}", label), label_style),
-                Span::styled(value, value_style),
-            ])
-        }).collect();
+                Line::from(vec![
+                    Span::styled(marker, Style::default().fg(Color::LightCyan)),
+                    Span::styled(format!("{:<14}", label), label_style),
+                    Span::styled(value, value_style),
+                ])
+            })
+            .collect();
 
         let mut all_lines = lines;
         all_lines.push(Line::from(""));
@@ -1098,12 +1528,23 @@ impl TuiApp {
         if let Some(idx) = self.list_state.selected() {
             if let Some(entry) = self.entries.get(idx) {
                 lines.push(Line::from(vec![
-                    Span::styled(format!(" {}", entry.name), Style::default().fg(Color::LightCyan).add_modifier(Modifier::BOLD)),
-                    Span::styled(format!("  {}", entry.secret), Style::default().fg(Color::Yellow)),
+                    Span::styled(
+                        format!(" {}", entry.name),
+                        Style::default()
+                            .fg(Color::LightCyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        format!("  {}", entry.secret),
+                        Style::default().fg(Color::Yellow),
+                    ),
                 ]));
             }
         }
-        lines.push(Line::from(Span::styled(" [Esc] close", Style::default().fg(Color::DarkGray))));
+        lines.push(Line::from(Span::styled(
+            " [Esc] close",
+            Style::default().fg(Color::DarkGray),
+        )));
 
         // Clear background to avoid selection bar bleeding through
         f.render_widget(Clear, popup_area);

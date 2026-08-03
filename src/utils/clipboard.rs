@@ -5,9 +5,7 @@ pub fn copy_to_clipboard(text: &str) -> Result<(), Box<dyn std::error::Error>> {
         use std::io::Write;
         use std::process::{Command, Stdio};
 
-        let mut child = Command::new("pbcopy")
-            .stdin(Stdio::piped())
-            .spawn()?;
+        let mut child = Command::new("pbcopy").stdin(Stdio::piped()).spawn()?;
 
         if let Some(stdin) = child.stdin.as_mut() {
             stdin.write_all(text.as_bytes())?;
@@ -29,11 +27,7 @@ pub fn copy_to_clipboard(text: &str) -> Result<(), Box<dyn std::error::Error>> {
         ];
 
         for (cmd, args) in &cmds {
-            if let Ok(mut child) = Command::new(cmd)
-                .args(args)
-                .stdin(Stdio::piped())
-                .spawn()
-            {
+            if let Ok(mut child) = Command::new(cmd).args(args).stdin(Stdio::piped()).spawn() {
                 if let Some(stdin) = child.stdin.as_mut() {
                     let _ = stdin.write_all(text.as_bytes());
                 }
@@ -51,9 +45,7 @@ pub fn copy_to_clipboard(text: &str) -> Result<(), Box<dyn std::error::Error>> {
         use std::io::Write;
         use std::process::{Command, Stdio};
 
-        let mut child = Command::new("clip")
-            .stdin(Stdio::piped())
-            .spawn()?;
+        let mut child = Command::new("clip").stdin(Stdio::piped()).spawn()?;
 
         if let Some(stdin) = child.stdin.as_mut() {
             stdin.write_all(text.as_bytes())?;

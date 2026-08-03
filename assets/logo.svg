@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 200" role="img" aria-label="mfacli">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFB86B"/>
+      <stop offset="1" stop-color="#F0654A"/>
+    </linearGradient>
+  </defs>
+  <g fill="url(#g)">
+    <ellipse cx="98" cy="126" rx="42" ry="31"/>
+    <circle cx="47" cy="84" r="17"/>
+    <circle cx="80" cy="61" r="17"/>
+    <circle cx="116" cy="61" r="17"/>
+    <circle cx="149" cy="84" r="17"/>
+  </g>
+  <text x="196" y="141" textLength="540" lengthAdjust="spacingAndGlyphs" font-family="ui-rounded, 'SF Pro Rounded', 'Nunito', 'Segoe UI', Verdana, sans-serif" font-size="112" font-weight="800" fill="url(#g)">mfacli</text>
+</svg>

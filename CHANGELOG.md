@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2026-08-03
+
+### Security
+- **Argon2id hardened**: KDF params raised to OWASP/RFC 9106 level (64 MiB / 3 passes / p=4); params now stored in a versioned ciphertext header (`MFA1` magic) with tamper caps
+- **Legacy vault compatibility**: pre-0.1.5 encrypted vaults (headerless format) still decrypt automatically
+- **Key material zeroized**: derived AES key is wiped from memory after use (`zeroize`)
+- **Export hardening**: `mfa export -o <file>` and encrypted vault writes now set mode 600 (was default 644)
+
+### Changed
+- Documentation restructure: README becomes a product landing page; detailed step-by-step guides moved to `docs/`
+- `<name|#>` addressing: `code` / `copy` / `show` / `edit` / `rename` / `remove` accept the list index as well as the name (exact name wins)
+- `cargo fmt` applied across the codebase
+
+### Fixed
+- `mfa list` column layout no longer collapses with short or single entries (stable min widths: NAME≥16, ISSUER≥12)
+- `mfa list` header: `#` column now pads to index width (header/rows align); top info block wrapped in a light box with display-width-aligned inner `│` separators and emoji-aware column widths
+- TUI: same stable min column widths; selection no longer shifts columns (fixed 2-cell `▸` lead + whole-row bold)
+
+### Added
+- Dependabot config for continuous dependency (SCA) scanning
+- Regression tests: legacy-format decrypt, magic-header presence
+
 ## [0.1.3] - 2026-08-02
 
 Initial public release.

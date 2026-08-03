@@ -73,9 +73,18 @@ impl OtpEntry {
             parsed.query_pairs().into_owned().collect();
 
         let secret = params.get("secret").ok_or("Missing secret in URI")?.clone();
-        let algorithm = params.get("algorithm").cloned().unwrap_or_else(|| "SHA1".to_string());
-        let digits = params.get("digits").and_then(|d| d.parse().ok()).unwrap_or(6);
-        let period = params.get("period").and_then(|p| p.parse().ok()).unwrap_or(30);
+        let algorithm = params
+            .get("algorithm")
+            .cloned()
+            .unwrap_or_else(|| "SHA1".to_string());
+        let digits = params
+            .get("digits")
+            .and_then(|d| d.parse().ok())
+            .unwrap_or(6);
+        let period = params
+            .get("period")
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(30);
         let issuer = params.get("issuer").cloned().or(issuer);
         // Some URIs (e.g. "otpauth://totp/issuer:?secret=...") carry no name
         // after the colon; fall back to the issuer so the entry is usable.
@@ -167,7 +176,10 @@ mod tests {
 
     #[test]
     fn decodes_at_sign_in_name() {
-        assert_eq!(percent_decode("dongshu.bu%401721358628378104"), "dongshu.bu@1721358628378104");
+        assert_eq!(
+            percent_decode("dongshu.bu%401721358628378104"),
+            "dongshu.bu@1721358628378104"
+        );
     }
 
     #[test]
@@ -208,7 +220,11 @@ fn pct_encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for &b in s.as_bytes() {
         let ok = b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.' || b == b'~';
-        if ok { out.push(b as char); } else { out.push_str(&format!("%{:02X}", b)); }
+        if ok {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{:02X}", b));
+        }
     }
     out
 }
