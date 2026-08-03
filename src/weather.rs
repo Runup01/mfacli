@@ -144,6 +144,10 @@ fn clean_weather(raw: &str) -> String {
         let cond = rest.trim();
         if city.is_empty() {
             raw.to_string()
+        } else if city.parse::<f64>().is_ok() {
+            // wttr.in falls back to raw coordinates when the (datacenter)
+            // IP has no city name — show a friendly label instead
+            format!("IP定位 {}", cond)
         } else {
             format!("{} {}", city, cond)
         }

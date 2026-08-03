@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Docs: Linux quick start recommends the musl static package (works on any distro / old glibc, e.g. CentOS 7)
 
 ### Fixed
+- Weather header shows "IP定位" instead of raw coordinates (e.g. 34.773200) when the IP has no city name; set an exact city via `mfa config --city <name>`
 - TUI list columns no longer shift by one on the longest-name row (name column padding off-by-one)
 - `scan` conflict prompt now tells "vault 中已存在" apart from "本批次重复" (duplicate QR images inside one batch no longer look like ghost entries)
 - QR display is now configurable: `half` (default, compact half-blocks) and `block` (full-block '█' only, for terminals whose fonts distort half-blocks) — switch via `mfa config --qr-style half|block` or TUI Settings → QR Style; both verified decodable end-to-end
