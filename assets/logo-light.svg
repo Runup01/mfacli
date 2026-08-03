@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 200" role="img" aria-label="mfacli">
+  <g fill="#1a1a1a">
+    <ellipse cx="98" cy="136" rx="42" ry="31"/>
+    <circle cx="47" cy="94" r="17"/>
+    <circle cx="80" cy="71" r="17"/>
+    <circle cx="116" cy="71" r="17"/>
+    <circle cx="149" cy="94" r="17"/>
+  </g>
+  <path d="M 190 168 C 194 162 198 158 198 151 L 198 96 C 198 68 246 68 246 96 L 246 151 M 246 96 C 246 68 294 68 294 96 L 294 151"
+        fill="none" stroke="#1a1a1a" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="318" y="151" font-family="ui-rounded, 'SF Pro Rounded', 'Nunito', 'Segoe UI', Verdana, sans-serif" font-weight="800" letter-spacing="2"><tspan font-size="112" fill="none" stroke="#1a1a1a" stroke-width="6">f</tspan><tspan font-size="112" fill="#1a1a1a">a</tspan><tspan font-size="112" fill="none" stroke="#1a1a1a" stroke-width="6">c</tspan><tspan font-size="112" fill="#1a1a1a">l</tspan><tspan font-size="112" fill="none" stroke="#1a1a1a" stroke-width="6">i</tspan></text>
+</svg>
