@@ -14,9 +14,6 @@ env:
 jobs:
   # ── Binary builds (tarball / zip) ─────────────────────────────
   build:
-    concurrency:
-      group: release-upload-${{ github.ref }}
-      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:
@@ -84,20 +81,16 @@ jobs:
           Copy-Item LICENSE dist/
           Compress-Archive -Path dist/* -DestinationPath ${{ matrix.archive }}
 
-      - name: Upload Release Asset
-        uses: softprops/action-gh-release@v2
-        continue-on-error: true
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          files: ${{ matrix.archive }}
-          draft: true
+          name: ${{ matrix.archive }}
+          path: ${{ matrix.archive }}
+          if-no-files-found: error
 
   # ── Linux packages (DEB + RPM) ────────────────────────────────
   package-linux:
-    needs: build
     runs-on: ubuntu-latest
-    concurrency:
-      group: release-upload-${{ github.ref }}
-      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:
@@ -118,13 +111,11 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Install musl toolchain (Linux static)
-        if: runner.os == 'Linux' && contains(matrix.target, 'linux-musl')
         run: |
           if [ "${{ matrix.target }}" = "x86_64-unknown-linux-musl" ]; then
             sudo apt-get update
             sudo apt-get install -y musl-tools
           else
-            # musl libc ships with rust-std; use bundled rust-lld as cross linker (no downloads)
             SYSROOT=$(rustc --print sysroot)
             sudo ln -sf "$SYSROOT/lib/rustlib/x86_64-unknown-linux-gnu/bin/rust-lld" /usr/local/bin/ld.lld
           fi
@@ -169,44 +160,28 @@ jobs:
         run: |
           nfpm package --packager rpm --target "../mfacli-${MFA_VERSION}-1.${{ matrix.rpm_arch }}.rpm"
 
-      - name: Upload DEB
-        uses: softprops/action-gh-release@v2
-        continue-on-error: true
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          files: mfacli_${{ steps.ver.outputs.version }}_${{ matrix.arch }}.deb
-          draft: true
+          name: pkg-${{ matrix.arch }}
+          path: |
+            mfacli_*.deb
+            mfacli-*.rpm
+          if-no-files-found: error
 
-      - name: Upload RPM
-        uses: softprops/action-gh-release@v2
-        continue-on-error: true
-        with:
-          files: mfacli-${{ steps.ver.outputs.version }}-1.${{ matrix.rpm_arch }}.rpm
-          draft: true
-
-  # ── Release notes (single job, no duplication) ────────────────
-  release-notes:
+  # ── Single release publisher (one writer, no race) ────────────
+  release:
     needs: [build, package-linux]
     runs-on: ubuntu-latest
     steps:
-      - name: Publish release (single writer)
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: assets
+
+      - name: Publish release with all assets
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          draft: false
           generate_release_notes: true
-      - name: Retry publish if raced
-        if: failure()
-        run: |
-          for i in 1 2 3 4 5; do
-            sleep 15
-            STATE=$(gh api "repos/${{ github.repository }}/releases/tags/${{ github.ref_name }}" --jq '.draft' 2>/dev/null || echo missing)
-            echo "attempt $i: draft=$STATE"
-            if [ "$STATE" = "false" ]; then echo "release published"; exit 0; fi
-            if [ "$STATE" = "true" ]; then
-              gh api -X PATCH "repos/${{ github.repository }}/releases/tags/${{ github.ref_name }}" -f draft=false && { echo "published"; exit 0; }
-            fi
-          done
-          echo "release not found or still draft after retries"
-          exit 1
-        env:
-          GH_TOKEN: ${{ github.token }}
+          files: assets/*

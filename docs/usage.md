@@ -71,11 +71,11 @@ mfa edit github --secret        # 隐藏输入新密钥
 mfa edit github --issuer "GitHub Inc"
 ```
 
-### `mfa rename <old|#> <new>`
+### `mfa rename <name|index> <new>`
 重命名（`edit --rename` 快捷方式）。
 
 ### `mfa remove <name|index>...`
-删除，支持多个混合：`mfa remove github 2 3`。先全部解析，任一无效则整体中止（防误删）；重复目标自动去重。
+删除，支持多个混合：`mfa remove github 02 03`。先全部解析，任一无效则整体中止（防误删）；重复目标自动去重。
 
 ### `mfa export [-o FILE] [-f FMT]`
 

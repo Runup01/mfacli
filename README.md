@@ -147,7 +147,7 @@ Expand-Archive mfacli.zip C:\tools\mfacli
 mfa add github --issuer GitHub   # 添加条目（密钥隐藏输入，不进历史）
 mfa code github                  # → 482916（纯 stdout，可管道）
 mfa copy github                  # 复制到剪贴板
-mfa remove 2                     # 名称或列表序号都能定位条目
+mfa remove 02                    # 名称或列表序号 (01/02…) 都能定位条目
 mfa tui                          # 交互式 TUI：双击复制 / 二维码 / 宠物
 ```
 

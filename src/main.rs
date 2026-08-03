@@ -612,6 +612,7 @@ fn resolve_target(
     arg: &str,
 ) -> Result<(String, Option<String>), Box<dyn std::error::Error>> {
     let entries = vault.list_entries();
+    let d = 2.max(entries.len().to_string().len()); // 与 list 显示一致的补零宽度
     let matches: Vec<&storage::models::OtpEntry> =
         entries.iter().filter(|e| e.name == arg).collect();
     if matches.len() == 1 {
@@ -623,7 +624,7 @@ fn resolve_target(
             .iter()
             .enumerate()
             .filter(|(_, e)| e.name == arg)
-            .map(|(i, _)| (i + 1).to_string())
+            .map(|(i, _)| format!("{:0d$}", i + 1, d = d))
             .collect();
         return Err(format!(
             "Name '{}' matches {} entries (INDEX {}); use the index instead",
@@ -639,7 +640,11 @@ fn resolve_target(
             return Ok((sorted[idx - 1].name.clone(), sorted[idx - 1].issuer.clone()));
         }
         return Err(
-            format!("Invalid index {} (valid: 1-{}, see `mfa list`)", idx, sorted.len()).into(),
+            format!(
+                "Invalid index {} (valid: {:0d$}-{:0d$}, see `mfa list`)",
+                idx, 1, sorted.len(), d = d
+            )
+            .into(),
         );
     }
     Err(format!("Entry '{}' not found (see `mfa list`)", arg).into())
