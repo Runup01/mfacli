@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documentation restructure: README becomes a product landing page; detailed step-by-step guides moved to `docs/`
 - `<name|index>` addressing: `code` / `copy` / `show` / `edit` / `rename` / `remove` accept the list index as well as the name (exact name wins)
 - `mfa remove` accepts multiple targets (names and/or indexes, deduped); invalid target aborts the whole batch
+- Linux binaries are now fully static (musl): run on any distro incl. CentOS 7, no glibc version errors
 - `mfa import` rename messages now distinguish "already exists in vault" from "duplicate in import file"
 - Entry identity is now (name, issuer): same name with different issuers coexists; ambiguous name addressing asks for the index; TUI add/rename/edit/import enforce the same uniqueness
 - Base32 secrets are now normalized (uppercased, separators stripped) on import and tolerated at generation time; legacy lowercase imports generate codes again; unrecoverable codes render red instead of green
