@@ -169,6 +169,26 @@ impl OtpEntry {
         }
         uri
     }
+
+    /// 人类可读版 URI（标签不编码）——仅用于展示；QR/导出请用 to_otpauth_uri
+    pub fn to_otpauth_uri_readable(&self) -> String {
+        let label = match &self.issuer {
+            Some(iss) => format!("{}:{}", iss, self.name),
+            None => self.name.clone(),
+        };
+        let mut uri = format!("otpauth://{}/{}", self.otp_type, label);
+        uri.push_str(&format!("?secret={}", self.secret));
+        if let Some(iss) = &self.issuer {
+            uri.push_str(&format!("&issuer={}", iss));
+        }
+        uri.push_str(&format!("&algorithm={}", self.algorithm));
+        uri.push_str(&format!("&digits={}", self.digits));
+        uri.push_str(&format!("&period={}", self.period));
+        if self.otp_type == "hotp" {
+            uri.push_str(&format!("&counter={}", self.counter));
+        }
+        uri
+    }
 }
 
 fn hex_val(b: u8) -> Option<u8> {

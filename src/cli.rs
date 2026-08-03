@@ -4,10 +4,10 @@ use clap::{Parser, Subcommand};
 #[command(
     name = "mfa",
     version,
-    about = "A developer-friendly CLI MFA/OTP manager"
+    about = "A developer-friendly, local-first MFA/OTP manager"
 )]
 pub struct Cli {
-    /// 本次绕过本机免密，强制手动输入密码
+    /// Bypass OS keychain for this run and enter the password manually
     #[arg(long, global = true)]
     pub no_keychain: bool,
 
@@ -25,24 +25,24 @@ fn parse_on_off(s: &str) -> Result<bool, String> {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Launch interactive TUI (default when no command given)
+    /// Launch the interactive TUI (default when no command is given)
     Tui,
 
-    /// Initialize vault (optionally with encryption)
+    /// Initialize the vault (optionally encrypted)
     Init {
-        /// Enable AES-256-GCM encryption for the vault
+        /// Enable AES-256-GCM encryption
         #[arg(long)]
         encrypt: bool,
     },
 
-    /// Enable the app lock (every access requires the password)
+    /// Enable the app lock (every access will require the password)
     Lock {
         /// Where to write the mandatory plain-text escape-hatch backup
         #[arg(short, long)]
         backup: Option<String>,
     },
 
-    /// Disable the app lock (decrypts vault back to plain, mode 600)
+    /// Disable the app lock (vault is decrypted back to plain text, mode 600)
     Unlock,
 
     /// Add a new OTP entry
@@ -50,15 +50,15 @@ pub enum Commands {
         /// Unique name for this entry
         name: String,
 
-        /// Base32-encoded secret key (omit to type it securely, hidden)
+        /// Base32-encoded secret key (omit to type it hidden)
         #[arg(short, long)]
         secret: Option<String>,
 
-        /// Issuer name
+        /// Issuer name (e.g. GitHub)
         #[arg(short, long)]
         issuer: Option<String>,
 
-        /// Hash algorithm: SHA1, SHA256, SHA512
+        /// Hash algorithm: SHA1 / SHA256 / SHA512
         #[arg(short, long, default_value = "SHA1")]
         algorithm: String,
 
@@ -69,25 +69,29 @@ pub enum Commands {
         /// Time period in seconds
         #[arg(short, long, default_value_t = 30)]
         period: u64,
+
+        /// Policy when the entry already exists: ask (default) / rename (auto _2) / skip / overwrite
+        #[arg(short, long, default_value = "ask", value_parser = ["ask", "rename", "skip", "overwrite"])]
+        conflict: String,
     },
 
-    /// Generate the current OTP code
+    /// Generate the current OTP code (entry by name or index)
     Code {
         /// Entry name or index (INDEX column of `mfa list`)
         name: String,
 
-        /// Copy code to clipboard
+        /// Copy the code to the clipboard
         #[arg(short, long)]
         copy: bool,
     },
 
-    /// Copy OTP code to clipboard
+    /// Copy the current OTP code to the clipboard (entry by name or index)
     Copy {
         /// Entry name or index (INDEX column of `mfa list`)
         name: String,
     },
 
-    /// Show entry details: secret + QR code
+    /// Show entry details: secret + QR code (entry by name or index)
     Show {
         /// Entry name or index (INDEX column of `mfa list`)
         name: String,
@@ -95,7 +99,7 @@ pub enum Commands {
 
     /// Scan QR image(s) to add entries (batch: multiple paths, dirs recursive)
     Scan {
-        /// QR image or directory paths (PNG/JPG/WebP; dirs scanned recursively)
+        /// QR image or directory paths (PNG/JPG/WebP; directories scanned recursively)
         #[arg(required = true)]
         paths: Vec<String>,
 
@@ -103,12 +107,16 @@ pub enum Commands {
         #[arg(short, long)]
         name: Option<String>,
 
-        /// 过滤模式：仅导入 name/issuer 命中的条目 (支持 | 或、* 通配、^/$ 锚点，忽略大小写)
+        /// Only import entries whose name/issuer match (supports | or, * wildcard, ^/$ anchors; case-insensitive)
         #[arg(short, long)]
         filter: Option<String>,
+
+        /// Policy when the entry already exists: ask (default) / rename (auto _2) / skip / overwrite
+        #[arg(short, long, default_value = "ask", value_parser = ["ask", "rename", "skip", "overwrite"])]
+        conflict: String,
     },
 
-    /// List all entries with current codes
+    /// List all entries with their current codes
     List {
         /// Max entries to display (default: terminal height - 8)
         #[arg(short, long)]
@@ -119,7 +127,7 @@ pub enum Commands {
         all: bool,
     },
 
-    /// Rename an entry (shortcut for `edit <name> --rename <new>`)
+    /// Rename an entry (shortcut for `edit --rename`)
     Rename {
         /// Current entry name or index (INDEX column of `mfa list`)
         old: String,
@@ -128,7 +136,7 @@ pub enum Commands {
         new: String,
     },
 
-    /// Edit an entry (name, secret, issuer)
+    /// Edit an entry: name / secret / issuer (entry by name or index)
     Edit {
         /// Entry name or index (INDEX column of `mfa list`)
         name: String,
@@ -137,7 +145,7 @@ pub enum Commands {
         #[arg(short, long)]
         rename: Option<String>,
 
-        /// New secret key (omit value to type it securely, hidden)
+        /// New secret key (omit the value to type it hidden)
         #[arg(short, long, num_args = 0..=1, default_missing_value = "")]
         secret: Option<String>,
 
@@ -146,20 +154,23 @@ pub enum Commands {
         issuer: Option<String>,
     },
 
-    /// Remove one or more entries
+    /// Remove entries: by name/index, or bulk delete with --filter
     Remove {
         /// Entry names or indexes (INDEX column of `mfa list`), space-separated
-        #[arg(required = true)]
         names: Vec<String>,
+
+        /// Bulk delete all entries whose name/issuer match (supports | or, * wildcard, ^/$ anchors; auto-backup + yes confirm)
+        #[arg(short, long)]
+        filter: Option<String>,
     },
 
-    /// Export entries (encrypted)
+    /// Export entries
     Export {
         /// Output file path (prints to stdout if omitted)
         #[arg(short, long)]
         output: Option<String>,
 
-        /// Format: otpauth (default, universal), json (full-fidelity), encrypted (password-protected)
+        /// Export format: otpauth (default, universal) / json (full fidelity) / encrypted (password-protected)
         #[arg(short, long, default_value = "otpauth")]
         format: String,
     },
@@ -169,52 +180,56 @@ pub enum Commands {
         /// File to import (format auto-detected when --source is omitted)
         path: String,
 
-        /// Force source format: google, json, csv, otpauth
+        /// Force source format: google / json / csv / otpauth
         #[arg(short, long)]
         source: Option<String>,
+
+        /// Policy when the entry already exists: ask (default) / rename (auto _2) / skip / overwrite
+        #[arg(short, long, default_value = "ask", value_parser = ["ask", "rename", "skip", "overwrite"])]
+        conflict: String,
     },
 
-    /// One-click backup (timestamped; encrypted vault stays encrypted)
+    /// One-click backup (timestamped; an encrypted vault stays encrypted)
     Backup {
-        /// Output path (default: auto timestamped path in config dir)
+        /// Output path (default: auto-timestamped file in the config dir)
         #[arg(short, long)]
         output: Option<String>,
 
-        /// Force plain-text escape-hatch backup
+        /// Force a plain-text escape-hatch backup (use with care)
         #[arg(long)]
         plain: bool,
     },
 
-    /// Wipe ALL entries (auto-backup first, then yes-confirm)
+    /// Wipe ALL entries (auto-backup first, then type yes to confirm)
     Clear,
 
-    /// Configure TUI appearance (pet, weather, bazi)
+    /// Configure appearance and behavior (pet / weather / almanac / keychain)
     Config {
-        /// Set pet style: robot, dino, cat, ghost, dragon
+        /// Pet style: robot / dino / cat / ghost / dragon
         #[arg(long)]
         pet: Option<String>,
 
-        /// Set weather city (default: auto IP detection)
+        /// Weather city (default: auto IP geolocation)
         #[arg(long)]
         city: Option<String>,
 
-        /// Toggle weather display
-        #[arg(long)]
+        /// Show weather (on/off)
+        #[arg(long, value_parser = parse_on_off)]
         show_weather: Option<bool>,
 
-        /// Toggle BaZi/almanac display
-        #[arg(long)]
+        /// Show BaZi almanac (on/off)
+        #[arg(long, value_parser = parse_on_off)]
         show_bazi: Option<bool>,
 
-        /// Toggle pet display
-        #[arg(long)]
+        /// Show pet (on/off)
+        #[arg(long, value_parser = parse_on_off)]
         show_pet: Option<bool>,
 
-        /// 本机免密：vault 密码托管到系统钥匙串 (macOS Keychain / Windows DPAPI / Linux Secret Service)
+        /// Store the vault password in the OS keychain (macOS Keychain / Windows DPAPI / Linux Secret Service)
         #[arg(long, value_parser = parse_on_off)]
         keychain: Option<bool>,
 
-        /// 恢复所有设置为默认值
+        /// Restore all settings to defaults
         #[arg(long)]
         reset: bool,
     },

@@ -164,6 +164,23 @@ impl Vault {
         self.entries.clear();
     }
 
+    /// 覆盖同名同 issuer 条目（保留原 created_at）；返回是否命中
+    pub fn replace_entry(&mut self, entry: OtpEntry) -> bool {
+        if let Some(slot) = self
+            .entries
+            .iter_mut()
+            .find(|e| e.name == entry.name && e.issuer == entry.issuer)
+        {
+            let old_created = slot.created_at.clone();
+            let new_created = entry.created_at.clone();
+            *slot = entry;
+            slot.created_at = old_created.or(new_created);
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn add_entry(&mut self, entry: OtpEntry) -> Result<(), Box<dyn std::error::Error>> {
         if self
             .entries

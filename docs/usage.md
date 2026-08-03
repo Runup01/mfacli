@@ -31,6 +31,7 @@ mfa tui                            # 交互式 TUI
 | `--algorithm` | `-a` | SHA1 / SHA256 / SHA512 | SHA1 |
 | `--digits` | `-d` | 6 / 8 | 6 |
 | `--period` | `-p` | 周期秒 | 30 |
+| `--conflict` | `-c` | 已存在时策略：`ask` / `rename` / `skip` / `overwrite` | ask |
 
 ```bash
 mfa add github --issuer GitHub                 # 推荐：隐藏输入
@@ -90,6 +91,8 @@ mfa edit github --issuer "GitHub Inc"
 ### `mfa remove <name|index>...`
 删除，支持多个混合：`mfa remove github 02 03`。先全部解析，任一无效则整体中止（防误删）；重复目标自动去重。
 
+`--filter` 模式批量删（如 `mfa remove -f 'aliyun|tencent'`，支持 `|`/`*`/`^`/`$`）：先列命中条目 → **自动备份** → 输 `yes` 才删。
+
 ### `mfa export [-o FILE] [-f FMT]`
 
 | 格式 | 用途 | 特点 |
@@ -117,7 +120,11 @@ mfa import backup.json
 mfa import -s encrypted backup.enc
 ```
 
-冲突自动重命名（`name_2`），永不覆盖。
+**冲突策略**（`add` / `scan` / `import` 统一）：`--conflict` 四选一——
+- `ask`（默认）：交互询问 `[y] 覆盖 / [r] 重命名 _2 / [s] 跳过`；非 TTY（脚本/CI）自动回退 `rename`
+- `rename`：自动 `_2` 递增，永不覆盖
+- `skip`：跳过已存在条目
+- `overwrite`：强制覆盖旧条目（保留原加入日期），免确认——批量重导场景用
 
 ### `mfa lock [--backup PATH]`
 启用应用锁：强制明文备份 → 设密码（两次确认，<8 位额外警告）→ 加密 vault。
@@ -189,7 +196,7 @@ TUI 里按 `s` 设置弹窗中也有 **Keychain** 项可切换。
 | `v` | 二维码 | `d` | 删除 |
 | `s`/`Tab` | 设置 | `q`/`Esc` | 退出 |
 
-**进阶**：双击 = 400ms 内连点左键，自动选中行并复制；设置弹窗 `↑↓`+`Enter`；编辑子菜单 `n`/`i`/`s`；二维码层 `Esc` 关闭；≤5s 变红提醒。
+**进阶**：双击 = 400ms 内连点左键，自动选中行并复制；设置弹窗 `↑↓`+`Enter`，含 **Keychain 免密 / Backup now / Clear all / Reset config**；编辑子菜单 `n`/`i`/`s`；二维码层 `Esc` 关闭；≤5s 变红提醒；7 天内新记录行内挂 `✦`，底栏显示加入日期。
 
 ## 典型场景
 
@@ -197,6 +204,13 @@ TUI 里按 `s` 设置弹窗中也有 **Keychain** 项可切换。
 ```bash
 CODE=$(mfa code github)
 CODE=$(MFA_PASSWORD="$VAULT_PW" mfa code github)   # 加密 vault
+```
+
+**批量扫码入库**
+```bash
+mfa scan ~/qr/                        # 目录递归，全部 otpauth QR 入库
+mfa scan ~/qr/ -f 'aliyun|tencent'    # 只要 name/issuer 命中的
+mfa scan a.png -n myname              # 单张可自定义名称
 ```
 
 **从其他工具迁移**

@@ -139,6 +139,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             algorithm,
             digits,
             period,
+            conflict,
         }) => cmd_add(
             &name,
             secret.as_deref(),
@@ -146,13 +147,17 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             &algorithm,
             digits,
             period,
+            &conflict,
         ),
         Some(Commands::Code { name, copy }) => cmd_code(&name, copy),
         Some(Commands::Copy { name }) => cmd_code(&name, true),
         Some(Commands::Show { name }) => cmd_show(&name),
-        Some(Commands::Scan { paths, name, filter }) => {
-            cmd_scan(&paths, name.as_deref(), filter.as_deref())
-        }
+        Some(Commands::Scan {
+            paths,
+            name,
+            filter,
+            conflict,
+        }) => cmd_scan(&paths, name.as_deref(), filter.as_deref(), &conflict),
         Some(Commands::Backup { output, plain }) => cmd_backup(output.as_deref(), plain),
         Some(Commands::Clear) => cmd_clear(),
         Some(Commands::List { limit, all }) => cmd_list(limit, all),
@@ -168,9 +173,13 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             issuer.as_deref(),
         ),
         Some(Commands::Rename { old, new }) => cmd_rename(&old, &new),
-        Some(Commands::Remove { names }) => cmd_remove(&names),
+        Some(Commands::Remove { names, filter }) => cmd_remove(&names, filter.as_deref()),
         Some(Commands::Export { output, format }) => cmd_export(output.as_deref(), &format),
-        Some(Commands::Import { source, path }) => cmd_import(source.as_deref(), &path),
+        Some(Commands::Import {
+            source,
+            path,
+            conflict,
+        }) => cmd_import(source.as_deref(), &path, &conflict),
         Some(Commands::Config {
             pet,
             city,
@@ -225,6 +234,7 @@ fn cmd_add(
     algorithm: &str,
     digits: u32,
     period: u64,
+    conflict: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Resolve secret: use the provided value, or prompt securely
     // (input is hidden and never written to shell history).
@@ -248,9 +258,34 @@ fn cmd_add(
         digits,
         period,
     )?;
-    vault.add_entry(entry)?;
+    if vault
+        .list_entries()
+        .iter()
+        .any(|e| e.name == entry.name && e.issuer == entry.issuer)
+    {
+        match conflict_action(&entry.name, entry.issuer.as_deref(), conflict)? {
+            ConflictAction::Overwrite => {
+                vault.replace_entry(entry);
+                println!("{} Overwrote '{}'", "✓".green(), name);
+            }
+            ConflictAction::Skip => {
+                println!("{} Skipped '{}' (already exists)", "→".yellow(), name);
+                return Ok(());
+            }
+            ConflictAction::Rename => {
+                let base = entry.name.clone();
+                let iss = entry.issuer.clone();
+                let mut e = entry;
+                e.name = dedup_name(&vault, &base, &iss);
+                vault.add_entry(e.clone())?;
+                println!("{} Added as '{}' ('{}' exists)", "✓".green(), e.name, base);
+            }
+        }
+    } else {
+        vault.add_entry(entry)?;
+        println!("{} Added '{}'", "✓".green(), name);
+    }
     vault.save()?;
-    println!("{} Added '{}'", "✓".green(), name);
     Ok(())
 }
 
@@ -285,7 +320,19 @@ fn cmd_show(name: &str) -> Result<(), Box<dyn std::error::Error>> {
     println!("  {} {}", "Algorithm:".bold(), entry.algorithm);
     println!("  {} {}", "Digits:".bold(), entry.digits);
     println!("  {} {}s", "Period:".bold(), entry.period);
-    println!("  {} {}", "URI:".bold(), entry.to_otpauth_uri());
+    let uri = entry.to_otpauth_uri();
+    println!("  {} {}", "URI:".bold(), uri);
+    if uri.contains('%') {
+        println!(
+            "  {} {}",
+            "Readable:".bold(),
+            entry.to_otpauth_uri_readable()
+        );
+        println!(
+            "  {}",
+            "→ URI 中的 %XX 是中文/特殊字符的 percent-encoding（otpauth 规范要求），二维码与导入不受影响".dimmed()
+        );
+    }
     println!();
     println!("  {}", "QR Code (scan with phone authenticator):".bold());
     println!();
@@ -296,6 +343,59 @@ fn cmd_show(name: &str) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+enum ConflictAction {
+    Overwrite,
+    Rename,
+    Skip,
+}
+
+/// 统一冲突策略：overwrite/skip/rename 直接生效；ask 交互询问（非 TTY 回退 rename）
+fn conflict_action(
+    name: &str,
+    issuer: Option<&str>,
+    mode: &str,
+) -> Result<ConflictAction, Box<dyn std::error::Error>> {
+    match mode {
+        "overwrite" => return Ok(ConflictAction::Overwrite),
+        "skip" => return Ok(ConflictAction::Skip),
+        "rename" => return Ok(ConflictAction::Rename),
+        _ => {}
+    }
+    use std::io::IsTerminal;
+    if !std::io::stdin().is_terminal() {
+        return Ok(ConflictAction::Rename);
+    }
+    print!(
+        "  '{}' ({}) 已存在 — [y] 覆盖 / [r] 重命名 _2 / [s] 跳过：",
+        name,
+        issuer.unwrap_or("-")
+    );
+    std::io::Write::flush(&mut std::io::stdout())?;
+    let mut ans = String::new();
+    std::io::BufRead::read_line(&mut std::io::stdin().lock(), &mut ans)?;
+    Ok(match ans.trim() {
+        "y" | "Y" | "yes" => ConflictAction::Overwrite,
+        "r" | "R" => ConflictAction::Rename,
+        _ => ConflictAction::Skip,
+    })
+}
+
+/// 重命名 _2 递增直到无冲突
+fn dedup_name(vault: &storage::vault::Vault, base: &str, issuer: &Option<String>) -> String {
+    let mut k = 2u32;
+    loop {
+        let cand = format!("{}_{}", base, k);
+        if !vault
+            .list_entries()
+            .iter()
+            .any(|e| e.name == cand && e.issuer == *issuer)
+        {
+            return cand;
+        }
+        k += 1;
+    }
 }
 
 /// 简易过滤模式：忽略大小写；`|` 或、`*` 通配、`^`/`$` 锚点
@@ -363,6 +463,7 @@ fn cmd_scan(
     paths: &[String],
     name: Option<&str>,
     filter: Option<&str>,
+    conflict: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let filter = filter.map(|f| f.to_string());
 
@@ -378,7 +479,7 @@ fn cmd_scan(
     }
 
     let mut vault = storage::vault::Vault::load()?;
-    let (mut added, mut skipped, mut failed) = (0usize, 0usize, 0usize);
+    let (mut added, mut overwritten, mut skipped, mut failed) = (0usize, 0usize, 0usize, 0usize);
     let mut report: Vec<String> = Vec::new();
 
     for img in &images {
@@ -402,14 +503,28 @@ fn cmd_scan(
                             }
                         }
                         let base = entry.name.clone();
-                        let mut k = 2;
-                        while vault
+                        let iss = entry.issuer.clone();
+                        if vault
                             .list_entries()
                             .iter()
-                            .any(|e| e.name == entry.name && e.issuer == entry.issuer)
+                            .any(|e| e.name == base && e.issuer == iss)
                         {
-                            entry.name = format!("{}_{}", base, k);
-                            k += 1;
+                            match conflict_action(&base, iss.as_deref(), conflict)? {
+                                ConflictAction::Skip => {
+                                    skipped += 1;
+                                    report.push(format!("  = {} skipped (exists)", base));
+                                    continue;
+                                }
+                                ConflictAction::Overwrite => {
+                                    vault.replace_entry(entry);
+                                    overwritten += 1;
+                                    report.push(format!("  ↑ {} overwritten", base));
+                                    continue;
+                                }
+                                ConflictAction::Rename => {
+                                    entry.name = dedup_name(&vault, &base, &iss);
+                                }
+                            }
                         }
                         let renamed = entry.name != base;
                         vault.add_entry(entry.clone())?;
@@ -449,14 +564,26 @@ fn cmd_scan(
         println!("{}", line);
     }
     println!(
-        "{} Scan done: {} image(s) | {} added | {} skipped | {} failed",
+        "{} Scan done: {} image(s) | {} added | {} overwritten | {} skipped | {} failed",
         "✓".green(),
         images.len(),
         added,
+        overwritten,
         skipped,
         failed
     );
     Ok(())
+}
+
+/// 读取一行确认输入；清洗退格符 (^? / ^H)，避免终端未行缓冲时误判
+fn read_yes() -> Result<bool, Box<dyn std::error::Error>> {
+    let mut ans = String::new();
+    std::io::BufRead::read_line(&mut std::io::stdin().lock(), &mut ans)?;
+    let cleaned: String = ans
+        .chars()
+        .filter(|c| *c != '\u{7f}' && *c != '\u{8}')
+        .collect();
+    Ok(cleaned.trim() == "yes")
 }
 
 fn backups_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
@@ -531,9 +658,7 @@ fn cmd_clear() -> Result<(), Box<dyn std::error::Error>> {
     println!("  {} 自动备份已写入：{}", "✓".green(), backup.display().to_string().cyan());
     print!("  输入 yes 确认清空（其他取消）：");
     std::io::Write::flush(&mut std::io::stdout())?;
-    let mut ans = String::new();
-    std::io::BufRead::read_line(&mut std::io::stdin().lock(), &mut ans)?;
-    if ans.trim() != "yes" {
+    if !read_yes()? {
         println!("  已取消，未做任何更改。");
         return Ok(());
     }
@@ -734,9 +859,9 @@ fn cmd_list(limit: Option<usize>, show_all: bool) -> Result<(), Box<dyn std::err
         pad_to_width("INDEX", idx_w).dimmed(),
         pad_to_width("NAME", name_col).blue().bold(),
         pad_to_width("ISSUER", issuer_col).magenta(),
-        pad_to_width("ADDED", 10).bold(),
         pad_to_width("CODE", 12).green().bold(),
         pad_to_width("⏱", 4).yellow(),
+        pad_to_width("ADDED", 10).bold(),
     );
     println!("  {}", "─".repeat(inner_w).dimmed());
 
@@ -786,9 +911,9 @@ fn cmd_list(limit: Option<usize>, show_all: bool) -> Result<(), Box<dyn std::err
             num.dimmed(),
             name_cell,
             pad_to_width(&issuer_display, issuer_col).magenta(),
-            added,
             code_style,
             timer,
+            added,
         );
     }
 
@@ -1003,7 +1128,10 @@ fn cmd_edit(
     Ok(())
 }
 
-fn cmd_remove(names: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_remove(names: &[String], filter: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    if names.is_empty() && filter.is_none() {
+        return Err("提供条目名称/序号，或用 --filter 模式批量删除（mfa remove --help 看用法）".into());
+    }
     let mut vault = storage::vault::Vault::load()?;
 
     // Resolve all targets first; abort entirely if any is invalid (no partial deletes)
@@ -1021,6 +1149,54 @@ fn cmd_remove(names: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
     if !errors.is_empty() {
         return Err(errors.join("; ").into());
+    }
+
+    // --filter 批量删：列命中 → 自动备份 → yes 确认
+    if let Some(pat) = filter {
+        let hits: Vec<(String, Option<String>)> = vault
+            .list_entries()
+            .iter()
+            .filter(|e| {
+                filter_match(pat, &e.name)
+                    || e.issuer.as_deref().map(|i| filter_match(pat, i)).unwrap_or(false)
+            })
+            .map(|e| (e.name.clone(), e.issuer.clone()))
+            .collect();
+        if hits.is_empty() {
+            println!("{} 模式 '{}' 未命中任何条目，无改动", "✓".green(), pat);
+        } else {
+            println!();
+            println!(
+                "  {} 模式 '{}' 命中 {} 条：",
+                "⚠".yellow().bold(),
+                pat,
+                hits.len()
+            );
+            for (n, i) in &hits {
+                println!("    - {} ({})", n, i.as_deref().unwrap_or("-"));
+            }
+            let ts = chrono::Local::now().format("%Y%m%d-%H%M%S");
+            let backup = backups_dir()?.join(format!("vault-{}-before-remove.json", ts));
+            let json = serde_json::to_string_pretty(vault.list_entries())?;
+            std::fs::write(&backup, json)?;
+            storage::vault::Vault::set_file_permissions(&backup)?;
+            println!("  {} 自动备份已写入：{}", "✓".green(), backup.display().to_string().cyan());
+            print!("  输入 yes 确认删除（其他取消）：");
+            std::io::Write::flush(&mut std::io::stdout())?;
+            if !read_yes()? {
+                println!("  已取消，未做任何更改。");
+                return Ok(());
+            }
+            for pair in hits {
+                if !resolved.contains(&pair) {
+                    resolved.push(pair);
+                }
+            }
+        }
+    }
+
+    if resolved.is_empty() {
+        return Ok(());
     }
 
     for (n, i) in &resolved {
@@ -1143,11 +1319,12 @@ fn cmd_export(output: Option<&str>, format: &str) -> Result<(), Box<dyn std::err
     Ok(())
 }
 
-fn cmd_import(source: Option<&str>, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_import(source: Option<&str>, path: &str, conflict: &str) -> Result<(), Box<dyn std::error::Error>> {
     let entries = import::import_from(source, path)?;
     let mut vault = storage::vault::Vault::load()?;
     let mut added = 0usize;
     let mut renamed = 0usize;
+    let mut overwritten = 0usize;
     let mut skipped = 0usize;
     // Snapshot identities that existed before this import, to explain rename reasons
     let pre_existing: Vec<(String, Option<String>)> = vault
@@ -1169,28 +1346,37 @@ fn cmd_import(source: Option<&str>, path: &str) -> Result<(), Box<dyn std::error
             .any(|e| e.name == entry.name && e.issuer == entry.issuer)
         {
             let base = entry.name.clone();
-            let mut n = 2u32;
-            while vault
-                .list_entries()
-                .iter()
-                .any(|e| e.name == format!("{}_{}", base, n) && e.issuer == entry.issuer)
-            {
-                n += 1;
+            let iss = entry.issuer.clone();
+            match conflict_action(&base, iss.as_deref(), conflict)? {
+                ConflictAction::Skip => {
+                    skipped += 1;
+                    println!("  = {} skipped (exists)", original_name);
+                    continue;
+                }
+                ConflictAction::Overwrite => {
+                    vault.replace_entry(entry.clone());
+                    overwritten += 1;
+                    println!("  ↑ {} overwritten", original_name);
+                    continue;
+                }
+                ConflictAction::Rename => {
+                    entry.name = dedup_name(&vault, &base, &iss);
+                    renamed += 1;
+                    let reason =
+                        if pre_existing.contains(&(original_name.clone(), entry.issuer.clone())) {
+                            "renamed, already exists in vault"
+                        } else {
+                            "renamed, duplicate in import file"
+                        };
+                    println!(
+                        "  {} {} → {} ({})",
+                        "⚠".yellow(),
+                        original_name,
+                        entry.name,
+                        reason
+                    );
+                }
             }
-            entry.name = format!("{}_{}", base, n);
-            renamed += 1;
-            let reason = if pre_existing.contains(&(original_name.clone(), entry.issuer.clone())) {
-                "renamed, already exists in vault"
-            } else {
-                "renamed, duplicate in import file"
-            };
-            println!(
-                "  {} {} → {} ({})",
-                "⚠".yellow(),
-                original_name,
-                entry.name,
-                reason
-            );
         }
         match vault.add_entry(entry.clone()) {
             Ok(()) => {
@@ -1214,9 +1400,10 @@ fn cmd_import(source: Option<&str>, path: &str) -> Result<(), Box<dyn std::error
     println!("  {}", "─".repeat(50));
     let src = source.unwrap_or("auto");
     println!(
-        "  {} {} added, {} renamed, {} skipped (source: {})",
+        "  {} {} added, {} overwritten, {} renamed, {} skipped (source: {})",
         "✓".green(),
         added,
+        overwritten,
         renamed,
         skipped,
         src
@@ -1437,9 +1624,7 @@ fn cmd_lock(backup: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
         println!("  {} 密码少于 8 位，记错 / 被撞风险高。", "!".yellow());
         print!("  仍要继续请输入 yes：");
         std::io::Write::flush(&mut std::io::stdout())?;
-        let mut ans = String::new();
-        std::io::BufRead::read_line(&mut std::io::stdin().lock(), &mut ans)?;
-        if ans.trim() != "yes" {
+        if !read_yes()? {
             return Err("已取消加锁（备份已保留，可手动删除）".into());
         }
     }

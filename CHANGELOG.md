@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8] - 2026-08-03
+
+### Added
+- Unified conflict policy for `add` / `scan` / `import`: `--conflict ask|rename|skip|overwrite` (interactive ask by default, force-overwrite for batch re-imports)
+- `mfa remove --filter <pattern>` bulk delete by name/issuer pattern (auto-backup + typed yes confirmation)
+
+### Fixed
+- Small / low-resolution QR images now decode via 2x–4x upscale retry (Nearest + Triangle); previously failed with "no QR detected"
+- Confirmation prompts ignore stray backspace/delete characters (`yes` typed with corrections no longer mis-cancels)
+
 ## [0.1.7] - 2026-08-03
 
 ### Added

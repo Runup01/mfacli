@@ -50,17 +50,47 @@ pub fn render_to_terminal(data: &str) -> Result<String, Box<dyn std::error::Erro
     Ok(output)
 }
 
-/// Decode a QR code from an image file
+/// Decode a QR code from an image file.
+///
+/// If the QR code is too small / low-resolution to detect at native size,
+/// retries with 2x/3x/4x upscaled variants (Nearest + Triangle filters)
+/// before giving up.
 pub fn decode_from_image(path: &str) -> Result<String, Box<dyn std::error::Error>> {
     let img = image::open(path)?;
-    let luma = img.to_luma8();
-    let mut prepared = rqrr::PreparedImage::prepare(luma);
 
-    let grids = prepared.detect_grids();
-    if grids.is_empty() {
-        return Err("No QR code found in image".into());
+    if let Some(content) = try_decode(&img) {
+        return Ok(content);
     }
 
-    let (_meta, content) = grids[0].decode()?;
-    Ok(content)
+    for factor in [2u32, 3, 4] {
+        for filter in [
+            image::imageops::FilterType::Nearest,
+            image::imageops::FilterType::Triangle,
+        ] {
+            let upscaled = image::imageops::resize(
+                &img,
+                img.width() * factor,
+                img.height() * factor,
+                filter,
+            );
+            let upscaled = image::DynamicImage::ImageRgba8(upscaled);
+            if let Some(content) = try_decode(&upscaled) {
+                return Ok(content);
+            }
+        }
+    }
+
+    Err("No QR code found in image (tried native + 2x/3x/4x upscaled)".into())
+}
+
+/// Single decode attempt on one image (detect all grids, return first decodable).
+fn try_decode(img: &image::DynamicImage) -> Option<String> {
+    let luma = img.to_luma8();
+    let mut prepared = rqrr::PreparedImage::prepare(luma);
+    for grid in prepared.detect_grids() {
+        if let Ok((_meta, content)) = grid.decode() {
+            return Some(content);
+        }
+    }
+    None
 }

@@ -44,13 +44,13 @@
   │ 丙午年丙酉月己亥日 满日  │ 宜:祭祀 出行  忌:动土 开仓         │
   └──────────────────────────────────────────────────────────────┘
 
-  ───────────────────────────────────────────────────────────────
-  INDEX  NAME          ISSUER        CODE          ⏱
-  ───────────────────────────────────────────────────────────────
-     01  github        GitHub        482916      18s
-     02  aws           AWS           917304       9s
-     03  jumpserver    JumpServer    204871      25s
-  ───────────────────────────────────────────────────────────────
+  ─────────────────────────────────────────────────────────────────────────────
+  INDEX  NAME              ISSUER        CODE          ⏱     ADDED
+  ─────────────────────────────────────────────────────────────────────────────
+     01  github            GitHub        482916        18s   2026-06-01
+     02  aws            ✦  AWS           917304        9s    2026-08-03
+     03  jumpserver        JumpServer    204871        25s   2026-06-12
+  ─────────────────────────────────────────────────────────────────────────────
   tip  mfa copy <name|index>  mfa show <name|index>  mfa tui
 ```
 
@@ -68,9 +68,9 @@
   │   ┘ └                                                                     │
   ├───────────────────────────────────────────────────────────────────────────┤
   │ Tokens                                                                    │
-  │ ▸ 01  github        GitHub        482916  ●●●●●●○○○○  18s                 │
-  │   02  aws           AWS           917304  ●●●○○○○○○○○  9s                 │
-  │   03  jumpserver    JumpServer    204871  ●●●●●●●●○○  25s                 │
+  │ ▸ 01  github            GitHub     482916   ●●●●●●○○○○  18s               │
+  │   02  aws           ✦ AWS        917304   ●●●○○○○○○○   9s                 │
+  │   03  jumpserver        JumpServer 204871   ●●●●●●●●○○  25s               │
   ├───────────────────────────────────────────────────────────────────────────┤
   │ c 复制  a 添加  e 编辑  r 重命名  v 二维码  d 删除  s 设置  q 退出        │
   └───────────────────────────────────────────────────────────────────────────┘
@@ -123,15 +123,15 @@ tar xzf mfacli-aarch64-apple-darwin.tar.gz && chmod +x mfa && sudo mv mfa /usr/l
 **🐧 Ubuntu / Debian（amd64）**
 
 ```bash
-curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.7/mfacli_0.1.7_amd64.deb
-sudo dpkg -i mfacli_0.1.7_amd64.deb
+curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.8/mfacli_0.1.8_amd64.deb
+sudo dpkg -i mfacli_0.1.8_amd64.deb
 ```
 
 **🎩 CentOS / Rocky / AlmaLinux（x86_64）**
 
 ```bash
-curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.7/mfacli-0.1.7-1.x86_64.rpm
-sudo rpm -i mfacli-0.1.7-1.x86_64.rpm
+curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.8/mfacli-0.1.8-1.x86_64.rpm
+sudo rpm -i mfacli-0.1.8-1.x86_64.rpm
 ```
 
 **🪟 Windows（PowerShell）**
@@ -151,6 +151,8 @@ mfa add github --issuer GitHub   # 添加条目（密钥隐藏输入，不进历
 mfa code github                  # → 482916（纯 stdout，可管道）
 mfa copy github                  # 复制到剪贴板
 mfa remove 02                    # 名称或列表序号 (01/02…) 都能定位条目
+mfa scan ./qr-dir/ -f 'aliyun'   # 批量扫目录二维码 + 过滤
+mfa backup                       # 一键时间戳备份
 mfa tui                          # 交互式 TUI：双击复制 / 二维码 / 宠物
 ```
 
