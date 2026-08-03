@@ -120,14 +120,28 @@ curl -LO https://github.com/Runup01/mfacli/releases/latest/download/mfacli-aarch
 tar xzf mfacli-aarch64-apple-darwin.tar.gz && chmod +x mfa && sudo mv mfa /usr/local/bin/
 ```
 
-**🐧 Ubuntu / Debian（amd64）**
+**🐧 Linux 通用（推荐：musl 静态包，全发行版通吃）**
+
+```bash
+# x86_64
+curl -LO https://github.com/Runup01/mfacli/releases/latest/download/mfacli-x86_64-unknown-linux-musl.tar.gz
+tar xzf mfacli-x86_64-unknown-linux-musl.tar.gz && chmod +x mfa && sudo mv mfa /usr/local/bin/
+
+# ARM64
+curl -LO https://github.com/Runup01/mfacli/releases/latest/download/mfacli-aarch64-unknown-linux-musl.tar.gz
+tar xzf mfacli-aarch64-unknown-linux-musl.tar.gz && chmod +x mfa && sudo mv mfa /usr/local/bin/
+```
+
+> musl 版静态链接、零依赖，CentOS 7 / Rocky 8 / 新 glibc 发行版都能直接跑（deb/rpm 的 gnu 版在老系统可能缺 GLIBC）。
+
+**🐧 Ubuntu / Debian（amd64，偏好包管理）**
 
 ```bash
 curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.8/mfacli_0.1.8_amd64.deb
 sudo dpkg -i mfacli_0.1.8_amd64.deb
 ```
 
-**🎩 CentOS / Rocky / AlmaLinux（x86_64）**
+**🎩 CentOS / Rocky / AlmaLinux（x86_64，偏好包管理）**
 
 ```bash
 curl -LO https://github.com/Runup01/mfacli/releases/download/v0.1.8/mfacli-0.1.8-1.x86_64.rpm

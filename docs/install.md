@@ -10,15 +10,15 @@ mfacli 是**静态编译的单文件**，安装 = 把 `mfa` 二进制放进 `PAT
 |------|------|------|---------|
 | macOS | Apple Silicon (M1–M4) | `mfacli-aarch64-apple-darwin.tar.gz` | 解压 → `chmod +x` → 移入 PATH |
 | macOS | Intel | `mfacli-x86_64-apple-darwin.tar.gz` | 同上 |
-| Linux | x86_64 | `mfacli-x86_64-unknown-linux-musl.tar.gz` | 解压 → 移入 PATH，或用 deb/rpm |
-| Linux | ARM64 | `mfacli-aarch64-unknown-linux-musl.tar.gz` | 同上 |
+| Linux（推荐） | x86_64 | `mfacli-x86_64-unknown-linux-musl.tar.gz` | 静态包，全发行版通用：解压 → 移入 PATH |
+| Linux（推荐） | ARM64 | `mfacli-aarch64-unknown-linux-musl.tar.gz` | 同上 |
 | Windows | x86_64 | `mfacli-x86_64-pc-windows-msvc.zip` | 解压 → `mfa.exe` 放入 PATH |
 | Debian/Ubuntu | amd64 | `mfacli_<ver>_amd64.deb` | `sudo dpkg -i` |
 | Debian/Ubuntu | arm64 | `mfacli_<ver>_arm64.deb` | `sudo dpkg -i` |
 | CentOS/Rocky/Alma | x86_64 | `mfacli-<ver>-1.x86_64.rpm` | `sudo rpm -i` |
 | CentOS/Rocky/Alma | aarch64 | `mfacli-<ver>-1.aarch64.rpm` | `sudo rpm -i` |
 
-### macOS / Linux（tarball）
+### macOS（tarball）
 
 ```bash
 # macOS Apple Silicon（tarball 文件名不含版本号，latest 链接稳定）
@@ -28,6 +28,29 @@ chmod +x mfa
 sudo mv mfa /usr/local/bin/
 mfa --version
 ```
+
+### Linux（musl 静态包，推荐）
+
+静态链接、零运行时依赖，**任何发行版 / 任何 glibc 版本**（含 CentOS 7、Rocky 8 等老系统）直接可用：
+
+```bash
+# x86_64
+curl -LO https://github.com/Runup01/mfacli/releases/latest/download/mfacli-x86_64-unknown-linux-musl.tar.gz
+tar xzf mfacli-x86_64-unknown-linux-musl.tar.gz
+chmod +x mfa
+sudo mv mfa /usr/local/bin/
+mfa --version
+
+# ARM64
+curl -LO https://github.com/Runup01/mfacli/releases/latest/download/mfacli-aarch64-unknown-linux-musl.tar.gz
+tar xzf mfacli-aarch64-unknown-linux-musl.tar.gz
+chmod +x mfa
+sudo mv mfa /usr/local/bin/
+```
+
+> 为什么推荐 musl？deb/rpm 使用 gnu 工具链构建，在 glibc < 2.34 的老系统上会报
+> `GLIBC_2.xx not found`；musl 静态包完全自包含，无此问题。
+> 需要包管理器统一纳管（升级/卸载/审计）时再选 deb/rpm。
 
 ### Debian / Ubuntu（.deb）
 
