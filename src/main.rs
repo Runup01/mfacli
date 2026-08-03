@@ -160,7 +160,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             issuer.as_deref(),
         ),
         Some(Commands::Rename { old, new }) => cmd_rename(&old, &new),
-        Some(Commands::Remove { name }) => cmd_remove(&name),
+        Some(Commands::Remove { names }) => cmd_remove(&names),
         Some(Commands::Export { output, format }) => cmd_export(output.as_deref(), &format),
         Some(Commands::Import { source, path }) => cmd_import(source.as_deref(), &path),
         Some(Commands::Config {
@@ -492,13 +492,15 @@ fn cmd_list(limit: Option<usize>, show_all: bool) -> Result<(), Box<dyn std::err
 
     let name_col = max_name_w.clamp(16, 36);
     let issuer_col = max_issuer_w.clamp(12, 36);
-    let inner_w = 2 + 1 + name_col + 1 + issuer_col + 1 + 12 + 1 + 4;
+    let idx_w = 5.max(sorted.len().to_string().len()); // "INDEX" header width
+    let idx_digits = 2.max(sorted.len().to_string().len()); // zero-padded: 01, 02, …
+    let inner_w = idx_w + 2 + name_col + 2 + issuer_col + 2 + 12 + 2 + 4;
 
     // ── Table header (open rules) ──
     println!("  {}", "─".repeat(inner_w).dimmed());
     println!(
-        "  {} {} {} {} {}",
-        pad_to_width("#", 2).dimmed(),
+        "  {}  {}  {}  {}  {}",
+        pad_to_width("INDEX", idx_w).dimmed(),
         pad_to_width("NAME", name_col).blue().bold(),
         pad_to_width("ISSUER", issuer_col).magenta(),
         pad_to_width("CODE", 12).green().bold(),
@@ -528,9 +530,9 @@ fn cmd_list(limit: Option<usize>, show_all: bool) -> Result<(), Box<dyn std::err
             pad_to_width(&format!("{}s", remaining), 4).yellow().to_string()
         };
 
-        let num = format!("{:>2}", idx + 1);
+        let num = format!("{:>w$}", format!("{:0d$}", idx + 1, d = idx_digits), w = idx_w);
         println!(
-            "  {} {} {} {} {}",
+            "  {}  {}  {}  {}  {}",
             num.dimmed(),
             pad_to_width(&name_display, name_col).cyan(),
             pad_to_width(&issuer_display, issuer_col).magenta(),
@@ -608,7 +610,7 @@ fn resolve_name(
             return Ok(sorted[idx - 1].name.clone());
         }
         return Err(
-            format!("No entry #{} (valid: 1-{}, see `mfa list`)", idx, sorted.len()).into(),
+            format!("Invalid index {} (valid: 1-{}, see `mfa list`)", idx, sorted.len()).into(),
         );
     }
     Err(format!("Entry '{}' not found (see `mfa list`)", arg).into())
@@ -711,12 +713,40 @@ fn cmd_edit(
     Ok(())
 }
 
-fn cmd_remove(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_remove(names: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut vault = storage::vault::Vault::load()?;
-    let resolved = resolve_name(&vault, name)?;
-    vault.remove_entry(&resolved)?;
+
+    // Resolve all targets first; abort entirely if any is invalid (no partial deletes)
+    let mut resolved: Vec<String> = Vec::new();
+    let mut errors: Vec<String> = Vec::new();
+    for arg in names {
+        match resolve_name(&vault, arg) {
+            Ok(n) => {
+                if !resolved.contains(&n) {
+                    resolved.push(n);
+                }
+            }
+            Err(e) => errors.push(e.to_string()),
+        }
+    }
+    if !errors.is_empty() {
+        return Err(errors.join("; ").into());
+    }
+
+    for name in &resolved {
+        vault.remove_entry(name)?;
+    }
     vault.save()?;
-    println!("{} Removed '{}'", "✓".green(), resolved);
+    if resolved.len() == 1 {
+        println!("{} Removed '{}'", "✓".green(), resolved[0]);
+    } else {
+        println!(
+            "{} Removed {} entries: {}",
+            "✓".green(),
+            resolved.len(),
+            resolved.join(", ")
+        );
+    }
     Ok(())
 }
 

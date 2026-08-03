@@ -61,7 +61,7 @@ pub enum Commands {
 
     /// Generate the current OTP code
     Code {
-        /// Entry name or index (# column of `mfa list`)
+        /// Entry name or index (INDEX column of `mfa list`)
         name: String,
 
         /// Copy code to clipboard
@@ -71,13 +71,13 @@ pub enum Commands {
 
     /// Copy OTP code to clipboard
     Copy {
-        /// Entry name or index (# column of `mfa list`)
+        /// Entry name or index (INDEX column of `mfa list`)
         name: String,
     },
 
     /// Show entry details: secret + QR code
     Show {
-        /// Entry name or index (# column of `mfa list`)
+        /// Entry name or index (INDEX column of `mfa list`)
         name: String,
     },
 
@@ -104,7 +104,7 @@ pub enum Commands {
 
     /// Rename an entry (shortcut for `edit <name> --rename <new>`)
     Rename {
-        /// Current entry name or index (# column of `mfa list`)
+        /// Current entry name or index (INDEX column of `mfa list`)
         old: String,
 
         /// New name
@@ -113,7 +113,7 @@ pub enum Commands {
 
     /// Edit an entry (name, secret, issuer)
     Edit {
-        /// Entry name or index (# column of `mfa list`)
+        /// Entry name or index (INDEX column of `mfa list`)
         name: String,
 
         /// New name
@@ -129,10 +129,11 @@ pub enum Commands {
         issuer: Option<String>,
     },
 
-    /// Remove an entry
+    /// Remove one or more entries
     Remove {
-        /// Entry name or index (# column of `mfa list`)
-        name: String,
+        /// Entry names or indexes (INDEX column of `mfa list`), space-separated
+        #[arg(required = true)]
+        names: Vec<String>,
     },
 
     /// Export entries (encrypted)

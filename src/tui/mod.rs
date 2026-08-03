@@ -1051,6 +1051,7 @@ impl TuiApp {
             + 1;
 
         let selected = self.list_state.selected().unwrap_or(0);
+        let idx_w = 2.max(self.entries.len().to_string().len());
         let items: Vec<ListItem> = self
             .entries
             .iter()
@@ -1084,6 +1085,10 @@ impl TuiApp {
                     Span::styled(
                         if sel { "▸ " } else { "  " },
                         Style::default().fg(Color::Yellow),
+                    ),
+                    Span::styled(
+                        format!("{:0w$} ", idx + 1, w = idx_w),
+                        Style::default().fg(Color::DarkGray),
                     ),
                     Span::styled(
                         name_d,

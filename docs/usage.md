@@ -37,7 +37,7 @@ mfa add github --issuer GitHub                 # 推荐：隐藏输入
 mfa add aws -s KRSXG5CTMVRXEZLU -i AWS         # 直接传（会留历史，不推荐）
 ```
 
-> **寻址 `<name|index>`**：所有"指定条目"的命令（`code` / `copy` / `show` / `edit` / `rename` / `remove`）既接受**名称**，也接受 `mfa list` 表格里的**序号**（`#` 列）。名称精确匹配优先；序号按当前排序（issuer→name），唯一且与列表一致。
+> **寻址 `<name|index>`**：所有"指定条目"的命令（`code` / `copy` / `show` / `edit` / `rename` / `remove`）既接受**名称**，也接受 `mfa list` 表格里的**序号**（`INDEX` 列）。名称精确匹配优先；序号按当前排序（issuer→name），唯一且与列表一致。
 
 ### `mfa code <name|index> [-c]`
 输出当前验证码（纯 stdout，可管道）。`-c` 同时复制。
@@ -71,8 +71,8 @@ mfa edit github --issuer "GitHub Inc"
 ### `mfa rename <old|#> <new>`
 重命名（`edit --rename` 快捷方式）。
 
-### `mfa remove <name|index>`
-删除。名称或序号均可：`mfa remove github` 或 `mfa remove 2`。
+### `mfa remove <name|index>...`
+删除，支持多个混合：`mfa remove github 2 3`。先全部解析，任一无效则整体中止（防误删）；重复目标自动去重。
 
 ### `mfa export [-o FILE] [-f FMT]`
 
