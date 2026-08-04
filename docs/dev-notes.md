@@ -55,6 +55,8 @@
 - **版本**：功能/修复变更即 bump；**已推送的 tag 永不复用**（远程 ruleset 不可删 tag，冲突就 bump）。
 - **commit 风格**：`release: vX.Y.Z — 摘要` / `feat:` / `docs:` / `ci:`。
 - **版本引用同步**：Cargo.toml、Cargo.lock、README、docs/install.md、CHANGELOG 一次改全。
+- **README 快速开始永远装最新**：安装命令一律 `releases/latest/download/` + 无版本别名包
+  （`mfacli_amd64.deb` / `mfacli_x86_64.rpm` / 各 tarball），发版不改 README；带版本号文件只作历史存档。
 - **新增配置项三同步**：CLI `--x` + TUI 设置项 + docs/usage.md 配置表。
 - **CI 严格模式**：`cargo clippy -- -D warnings`；`too_many_arguments` 默认阈值 7，
   参数多了收结构体（`ConfigOpts`），不靠 `#[allow]`。

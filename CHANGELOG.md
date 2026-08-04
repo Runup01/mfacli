@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.10] - 2026-08-03
 
 ### Changed
+- Releases now also ship version-less alias packages (`mfacli_amd64.deb`, `mfacli_x86_64.rpm`, …) so `releases/latest/download/` links in docs always install the newest version
 - Release tarballs / zips now contain a single top-level directory (e.g. `mfacli-x86_64-unknown-linux-musl/`) instead of loose files, so extracting never clutters your current directory
 - Docs: Linux quick start recommends the musl static package (works on any distro / old glibc, e.g. CentOS 7)
 

@@ -162,6 +162,14 @@ jobs:
         run: |
           nfpm package --packager rpm --target "../mfacli-${MFA_VERSION}-1.${{ matrix.rpm_arch }}.rpm"
 
+      - name: Version-less aliases (stable latest/download links)
+        working-directory: pkg
+        env:
+          MFA_VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          cp "../mfacli_${MFA_VERSION}_${{ matrix.arch }}.deb" "../mfacli_${{ matrix.arch }}.deb"
+          cp "../mfacli-${MFA_VERSION}-1.${{ matrix.rpm_arch }}.rpm" "../mfacli-${{ matrix.rpm_arch }}.rpm"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
