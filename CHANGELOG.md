@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.12] - 2026-08-04
+
+### Fixed
+- INDEX numbers are now stable and identical everywhere (`mfa list`, `mfa list --group`, TUI, and all `<name|index>` commands): they are positions in the flat issuer→name order and no longer shift when entries join/leave custom groups — previously a number read from a stale screen could hit the wrong entry (e.g. `mfa group set X 26` right after creating a group); the TUI also used vault insertion order before and could disagree with the CLI
+- `mfa list --group` with no custom groups no longer prints a stray `○ 其余条目` separator above the table
+
 ## [0.1.11] - 2026-08-04
 
 ### Added
@@ -17,8 +23,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Custom-group sections now end with an explicit dim boundary (`○ 其余条目 ╌╌…` in the CLI, a non-selectable divider row in the TUI) so it is always obvious where your groups end and the flat list begins
 
 ### Fixed
-- INDEX numbers are now stable and identical everywhere (`mfa list`, `mfa list --group`, TUI, and all `<name|index>` commands): they are positions in the flat issuer→name order and no longer shift when entries join/leave custom groups — previously a number read from a stale screen could hit the wrong entry (e.g. `mfa group set X 26` right after creating a group); the TUI also used vault insertion order before and could disagree with the CLI
-- `mfa list --group` with no custom groups no longer prints a stray `○ 其余条目` separator above the table
 - Piping into `head` etc. (`mfa list | head -3`) no longer panics with "Broken pipe" — SIGPIPE default behavior restored, exits quietly like standard Unix tools
 
 ## [0.1.10] - 2026-08-03
