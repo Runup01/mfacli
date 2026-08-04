@@ -219,7 +219,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
 
 fn cmd_tui() -> Result<(), Box<dyn std::error::Error>> {
     let vault = storage::vault::Vault::load()?;
-    let entries = vault.list_entries().to_vec();
+    let entries: Vec<_> = flat_sorted(vault.list_entries()).into_iter().cloned().collect();
 
     if entries.is_empty() {
         println!("No entries found. Add one first:");
@@ -858,12 +858,34 @@ fn cmd_list(
     println!("  {}", format!("└{}┘", "─".repeat(inner_w + 2)).dimmed());
     println!();
 
-    // ── Sort entries by issuer then name (same order as `resolve_name`) ──
-    let sorted = sorted_entries(entries);
+    // ── Canonical flat order; INDEX = position here (stable across groups) ──
+    let flat = flat_sorted(entries);
+
+    // ── View rows: (flat number, entry); group mode puts ★ sections first ──
+    let mut view: Vec<(usize, &storage::models::OtpEntry)> = Vec::with_capacity(flat.len());
+    let mut custom_shown = 0usize;
+    if group {
+        let mut keys: Vec<&str> = flat.iter().filter_map(|e| e.group.as_deref()).collect();
+        keys.sort_by_key(|k| k.to_lowercase());
+        keys.dedup();
+        for k in keys {
+            for (i, e) in flat.iter().enumerate() {
+                if e.group.as_deref() == Some(k) {
+                    view.push((i + 1, e));
+                    custom_shown += 1;
+                }
+            }
+        }
+    }
+    for (i, e) in flat.iter().enumerate() {
+        if !group || e.group.is_none() {
+            view.push((i + 1, e));
+        }
+    }
 
     // ── Determine display limit ──
     let max_display = if show_all {
-        sorted.len()
+        view.len()
     } else {
         limit.unwrap_or_else(|| {
             crossterm::terminal::size()
@@ -871,19 +893,19 @@ fn cmd_list(
                 .unwrap_or(20)
         })
     };
-    let display_entries = &sorted[..max_display.min(sorted.len())];
-    let hidden_count = sorted.len().saturating_sub(max_display);
+    let display_entries = &view[..max_display.min(view.len())];
+    let hidden_count = view.len().saturating_sub(max_display);
 
     // ── Calculate adaptive column widths ──
     let max_name_w = display_entries
         .iter()
-        .map(|e| display_width(&truncate_str(&e.name, 36)))
+        .map(|&(_, e)| display_width(&truncate_str(&e.name, 36)))
         .max()
         .unwrap_or(4)
         .max(4);
     let max_issuer_w = display_entries
         .iter()
-        .map(|e| {
+        .map(|&(_, e)| {
             let iss = e.issuer.as_deref().unwrap_or("");
             // If name == issuer, show "·" (1 char)
             display_width(&truncate_str(iss, 36))
@@ -894,8 +916,8 @@ fn cmd_list(
 
     let name_col = max_name_w.clamp(16, 36);
     let issuer_col = max_issuer_w.clamp(12, 36);
-    let idx_w = 5.max(sorted.len().to_string().len()); // "INDEX" header width
-    let idx_digits = 2.max(sorted.len().to_string().len()); // zero-padded: 01, 02, …
+    let idx_w = 5.max(flat.len().to_string().len()); // "INDEX" header width
+    let idx_digits = 2.max(flat.len().to_string().len()); // zero-padded: 01, 02, …
     let inner_w = idx_w + 2 + name_col + 2 + issuer_col + 2 + 10 + 2 + 12 + 2 + 4;
 
     // ── Table header (open rules) ──
@@ -913,31 +935,33 @@ fn cmd_list(
 
     // ── Data rows ── (group mode: custom groups as ★ sections on top,
     // everything else displayed flat after a clear separator)
-    let mut last_id: Option<(bool, String)> = None;
+    let mut last_group: Option<String> = None;
     let mut sep_printed = false;
-    for (idx, entry) in display_entries.iter().enumerate() {
+    for (pos, &(num, entry)) in display_entries.iter().enumerate() {
         if group {
-            let id = group_id(entry);
-            if id.0 && last_id.as_ref() != Some(&id) {
-                if last_id.is_none() {
-                    println!("  {}", "★ 自定义分组".yellow().bold());
+            let g = entry.group.clone();
+            if let Some(k) = &g {
+                if last_group.as_ref() != Some(k) {
+                    if last_group.is_none() {
+                        println!("  {}", "★ 自定义分组".yellow().bold());
+                    }
+                    let count = display_entries[pos..]
+                        .iter()
+                        .filter(|&(_, e)| e.group.as_deref() == Some(k.as_str()))
+                        .count();
+                    let head_raw = format!("▐ {} · {} ★ ", k, count);
+                    let head = format!(
+                        "{} {} · {} {} ",
+                        "▐".yellow(),
+                        k.yellow().bold(),
+                        count.to_string().dimmed(),
+                        "★".yellow()
+                    );
+                    let fill = inner_w.saturating_sub(display_width(&head_raw));
+                    println!("  {}{}", head, "╌".repeat(fill).dimmed());
+                    last_group = Some(k.clone());
                 }
-                let count = display_entries[idx..]
-                    .iter()
-                    .filter(|e| group_id(e) == id)
-                    .count();
-                let head_raw = format!("▐ {} · {} ★ ", id.1, count);
-                let head = format!(
-                    "{} {} · {} {} ",
-                    "▐".yellow(),
-                    id.1.yellow().bold(),
-                    count.to_string().dimmed(),
-                    "★".yellow()
-                );
-                let fill = inner_w.saturating_sub(display_width(&head_raw));
-                println!("  {}{}", head, "╌".repeat(fill).dimmed());
-                last_id = Some(id);
-            } else if !id.0 && !sep_printed {
+            } else if custom_shown > 0 && !sep_printed {
                 // Boundary: custom groups end here, the rest is the flat table
                 let sep_raw = format!("○ {} ", "其余条目");
                 let fill = inner_w.saturating_sub(display_width(&sep_raw));
@@ -987,7 +1011,7 @@ fn cmd_list(
             pad_to_width(&format!("{}s", remaining), 4).yellow().to_string()
         };
 
-        let num = format!("{:>w$}", format!("{:0d$}", idx + 1, d = idx_digits), w = idx_w);
+        let num = format!("{:>w$}", format!("{:0d$}", num, d = idx_digits), w = idx_w);
         println!(
             "  {}  {}  {}  {}  {}  {}",
             num.dimmed(),
@@ -1073,16 +1097,17 @@ fn group_id(entry: &storage::models::OtpEntry) -> (bool, String) {
     (false, auto_group_key(entry))
 }
 
-/// Sort entries in the order `mfa list` displays them
-/// (custom groups first, then group key → name), so flat and `--group`
-/// views share one canonical order and indexes match.
-fn sorted_entries(entries: &[storage::models::OtpEntry]) -> Vec<&storage::models::OtpEntry> {
+/// Canonical flat order: auto group key (issuer → name prefix → "other")
+/// then name. INDEX = 1-based position in this order; assigning entries to
+/// custom groups never moves it, so a number read from `mfa list`,
+/// `mfa list --group` or the TUI stays valid everywhere.
+fn flat_sorted(entries: &[storage::models::OtpEntry]) -> Vec<&storage::models::OtpEntry> {
     let mut sorted: Vec<&storage::models::OtpEntry> = entries.iter().collect();
     sorted.sort_by(|a, b| {
-        let (ca, ka) = group_id(a);
-        let (cb, kb) = group_id(b);
-        cb.cmp(&ca) // custom groups first
-            .then_with(|| ka.to_lowercase().cmp(&kb.to_lowercase()))
+        let ka = auto_group_key(a);
+        let kb = auto_group_key(b);
+        ka.to_lowercase()
+            .cmp(&kb.to_lowercase())
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
     sorted
@@ -1102,7 +1127,7 @@ fn resolve_target(
         return Ok((matches[0].name.clone(), matches[0].issuer.clone()));
     }
     if matches.len() > 1 {
-        let sorted = sorted_entries(entries);
+        let sorted = flat_sorted(entries);
         let idxs: Vec<String> = sorted
             .iter()
             .enumerate()
@@ -1118,7 +1143,7 @@ fn resolve_target(
         .into());
     }
     if let Ok(idx) = arg.parse::<usize>() {
-        let sorted = sorted_entries(entries);
+        let sorted = flat_sorted(entries);
         if (1..=sorted.len()).contains(&idx) {
             return Ok((sorted[idx - 1].name.clone(), sorted[idx - 1].issuer.clone()));
         }
@@ -1369,7 +1394,7 @@ fn cmd_group(action: GroupAction) -> Result<(), Box<dyn std::error::Error>> {
                 println!("\n  No entries yet.\n");
                 return Ok(());
             }
-            let sorted = sorted_entries(entries);
+            let sorted = flat_sorted(entries);
             let custom: Vec<&storage::models::OtpEntry> = sorted
                 .iter()
                 .copied()

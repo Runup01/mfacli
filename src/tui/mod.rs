@@ -872,14 +872,21 @@ impl TuiApp {
                     self.mode = Mode::Normal;
                     return;
                 }
+                let ident = (entry.name.clone(), entry.issuer.clone());
                 self.entries.push(entry);
+                self.resort_entries();
                 self.save_vault();
-                let new_idx = self.entries.len() - 1;
-                if self.group_mode {
-                    self.collapsed.remove(&group_id(&self.entries[new_idx]));
-                }
-                if let Some(row) = self.row_of_entry(new_idx) {
-                    self.list_state.select(Some(row));
+                if let Some(new_idx) = self
+                    .entries
+                    .iter()
+                    .position(|e| e.name == ident.0 && e.issuer == ident.1)
+                {
+                    if self.group_mode {
+                        self.collapsed.remove(&group_id(&self.entries[new_idx]));
+                    }
+                    if let Some(row) = self.row_of_entry(new_idx) {
+                        self.list_state.select(Some(row));
+                    }
                 }
                 self.status_message = Some((format!("Added '{}'", name), StatusKind::Success));
                 self.pet_mood = PetMood::Happy;
@@ -908,7 +915,9 @@ impl TuiApp {
                     Some((format!("'{}' already exists", new_name), StatusKind::Error));
             } else {
                 self.entries[idx].name = new_name.to_string();
+                self.resort_entries();
                 self.save_vault();
+                self.anchor_entry(new_name, &iss);
                 self.status_message = Some((
                     format!("Renamed '{}' → '{}'", old, new_name),
                     StatusKind::Success,
@@ -1015,7 +1024,9 @@ impl TuiApp {
             } else {
                 let old = self.entries[idx].name.clone();
                 self.entries[idx].name = new_name.to_string();
+                self.resort_entries();
                 self.save_vault();
+                self.anchor_entry(new_name, &iss);
                 self.status_message = Some((
                     format!("Renamed '{}' → '{}'", old, new_name),
                     StatusKind::Success,
@@ -1046,10 +1057,12 @@ impl TuiApp {
                 self.mode = Mode::Normal;
                 return;
             }
-            self.entries[idx].issuer = new_iss;
+            self.entries[idx].issuer = new_iss.clone();
+            self.resort_entries();
             self.save_vault();
+            self.anchor_entry(&cur_name, &new_iss);
             self.status_message = Some((
-                format!("Updated issuer for '{}'", self.entries[idx].name),
+                format!("Updated issuer for '{}'", cur_name),
                 StatusKind::Success,
             ));
         }
@@ -1210,6 +1223,31 @@ impl TuiApp {
     }
 
     // ─── Group / fold helpers ──────────────────────────────────
+
+    /// Re-sort into the canonical flat order shared with the CLI, so the
+    /// INDEX column always matches `mfa list` and never shifts on grouping.
+    fn resort_entries(&mut self) {
+        self.entries.sort_by(|a, b| {
+            let ka = auto_group_key(a);
+            let kb = auto_group_key(b);
+            ka.to_lowercase()
+                .cmp(&kb.to_lowercase())
+                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        });
+    }
+
+    /// Move the cursor back onto the given entry after a re-sort.
+    fn anchor_entry(&mut self, name: &str, issuer: &Option<String>) {
+        let slot = self
+            .entries
+            .iter()
+            .position(|e| e.name == name && &e.issuer == issuer);
+        if let Some(i) = slot {
+            if let Some(row) = self.row_of_entry(i) {
+                self.list_state.select(Some(row));
+            }
+        }
+    }
 
     fn visible_rows(&self) -> Vec<VisRow> {
         if !self.group_mode {
