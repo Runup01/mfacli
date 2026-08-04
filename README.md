@@ -26,6 +26,7 @@
   <a href="docs/install.md">安装</a> ·
   <a href="docs/usage.md">使用指南</a> ·
   <a href="docs/faq.md">FAQ</a> ·
+  <a href="docs/dev-notes.md">开发沉淀</a> ·
   <a href="#安全设计">安全</a> ·
   <a href="CHANGELOG.md">更新日志</a>
 </p>
@@ -180,6 +181,7 @@ mfa tui                          # 交互式 TUI：双击复制 / 二维码 / �
 | [docs/install.md](docs/install.md) | 全平台安装：tarball / DEB / RPM / Windows / 源码编译 / 校验和 |
 | [docs/usage.md](docs/usage.md) | 命令全表、TUI 快捷键、典型场景、环境变量、文件位置 |
 | [docs/faq.md](docs/faq.md) | 排错：PATH / Gatekeeper / 乱码 / 剪贴板 / 天气降级 / 忘锁密码 |
+| [docs/dev-notes.md](docs/dev-notes.md) | 开发沉淀：关键决策记忆、长期规范、踩坑清单 |
 | [SECURITY.md](SECURITY.md) | 安全模型与漏洞上报 |
 | [examples/](examples/) | 导入模板（otpauth / JSON） |
 
