@@ -68,8 +68,20 @@ mfa scan a.png b.jpg -f 'aliyun|tencent'   # 批量 + 过滤
 
 重名条目自动 `_2` 递增；结束输出 added/skipped/failed 汇总。
 
-### `mfa list [-l N] [--all]`
+### `mfa list [-l N] [--all] [-g]`
 按 issuer→name 排序列出。`-l` 限条数，`--all` 不分页。含 **ADDED** 列（加入日期）；**7 天内**新记录名字后挂 `✦` 标签（TUI 同，底栏另显示完整日期）。
+
+`-g/--group`：**自定义分组小节置顶**（`★ 自定义分组` 区，`▐ 组名 · n ★` 标题）；**其余未加组的条目按正常表格平铺显示**，不再自动生成 issuer 小节，两种条目不会混在一起；自定义组区结尾以暗淡的 `○ 其余条目 ╌╌…` 标明与平铺表格的边界，一眼可见分组到哪里结束。平铺与分组共用同一排序（自定义组置顶），**序号 (INDEX) 在两种视图下都有效**。TUI 的 `f` 分组视图同理：自定义组为可折叠的黄色标题（★），其余条目平铺，两区之间有一条不可选中的暗淡 `╌` 分隔行（光标自动跳过）。
+
+**自定义分组**：分组名任意（中文可），条目可随时移入/移出：
+
+```bash
+mfa edit github --group 工作      # 单条：加入/改到「工作」组（组名不存在则自动创建）
+mfa edit github --group ""       # 移出分组，回到平铺显示
+mfa group set 工作 github jms 03  # 批量：一次多条移入（详见下方 mfa group）
+```
+
+TUI 里等价操作：`e` 编辑菜单 → `g`。导出（otpauth/JSON）会携带分组信息，导入自动还原。
 
 ### `mfa edit <name|index> [OPTIONS]`
 
@@ -78,6 +90,7 @@ mfa scan a.png b.jpg -f 'aliyun|tencent'   # 批量 + 过滤
 | `--rename` | `-r` | 新名称 |
 | `--secret` | `-s` | 新密钥（不带值则隐藏输入） |
 | `--issuer` | `-i` | 新发行方 |
+| `--group` | `-g` | 自定义分组名（空字符串 `""` = 移出分组，回到平铺显示） |
 
 ```bash
 mfa edit github --rename gh
@@ -87,6 +100,18 @@ mfa edit github --issuer "GitHub Inc"
 
 ### `mfa rename <name|index> <new>`
 重命名（`edit --rename` 快捷方式）。
+
+### `mfa group …`（批量分组管理）
+单条调整用 `edit --group`；**批量**调整用这组命令，目标支持名称与序号混写：
+
+```bash
+mfa group list                        # 自定义 / 自动分两个区列出
+mfa group set 堡垒机 jms 03 tencent-cvm   # 一次性把多条移入组（组不存在自动创建）
+mfa group unset jms 03                # 批量移出分组，回到平铺显示
+mfa group rename 堡垒机 跳板机          # 重命名自定义组（成员跟随）
+```
+
+任一目标无效时**整体中止**，不做部分更改。
 
 ### `mfa remove <name|index>...`
 删除，支持多个混合：`mfa remove github 02 03`。先全部解析，任一无效则整体中止（防误删）；重复目标自动去重。
@@ -193,11 +218,12 @@ TUI 里按 `s` 设置弹窗中也有 **Keychain** 项可切换。
 | `↑↓`/`jk` | 导航 | `PgUp`/`PgDn` · `Ctrl+U/D` | 翻页（10 行/页） |
 | `g`/`Home` · `G`/`End` | 跳首 / 跳尾 | `a` | 添加 |
 | `c`/`Enter` | 复制 | `e` | 编辑 |
-| 🖱 双击 | 复制 | `r` | 重命名 |
+| 🖱 双击 | 复制（双击分组头 = 折叠/展开） | `r` | 重命名 |
 | `v` | 二维码 | `d` | 删除 |
+| `f` | 分组视图开关 | `空格` | 折叠/展开当前分组 |
 | `s`/`Tab` | 设置 | `q`/`Esc` | 退出 |
 
-**进阶**：双击 = 400ms 内连点左键，自动选中行并复制；设置弹窗 `↑↓`+`Enter`，含 **Keychain 免密 / Backup now / Clear all / Reset config**；编辑子菜单 `n`/`i`/`s`；二维码层 `Esc` 关闭；≤5s 变红提醒；7 天内新记录行内挂 `✦`，底栏显示加入日期。
+**进阶**：`f` 切换分组视图——**自定义组**以黄色 `▐ 组名 · n ★` 可折叠小节置顶，**其余条目全部平铺**，两区之间有暗淡分隔行标明边界；自动分组（issuer / 名称前缀）总览见 `mfa group list`；`空格` 或双击分组头折叠/展开；双击 = 400ms 内连点左键，自动选中行并复制；设置弹窗 `↑↓`+`Enter`，含 **Keychain 免密 / Backup now / Clear all / Reset config**；编辑子菜单 `n`/`i`/`s`/`g`（名称/发行方/密钥/分组）；二维码层 `Esc` 关闭；≤5s 变红提醒；7 天内新记录行内挂 `✦`，底栏显示加入日期。
 
 ## 典型场景
 

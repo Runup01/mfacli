@@ -95,6 +95,7 @@
 | **本机免密（opt-in）** | 密码托管 macOS Keychain / Windows DPAPI / Linux Secret Service，首次解锁后零输入 |
 | **本地优先** | 零云端、零遥测，核心全离线；vault 权限 600 |
 | **跨平台包** | 单静态二进制 + DEB / RPM / tarball / zip |
+| **分组 / 折叠** | `mfa list --group` / TUI `f`：自定义组 ★ 小节置顶、`空格` 折叠，其余条目平铺；`mfa group set/unset` 批量移组 |
 | **CJK 友好** | 中文名称按显示宽度对齐，截断不破坏字符 |
 | **趣味装饰** | 5 种像素宠物、天气、中国黄历，均可关闭 |
 
@@ -170,6 +171,8 @@ mfa code github                  # → 482916（纯 stdout，可管道）
 mfa copy github                  # 复制到剪贴板
 mfa remove 02                    # 名称或列表序号 (01/02…) 都能定位条目
 mfa scan ./qr-dir/ -f 'aliyun'   # 批量扫目录二维码 + 过滤
+mfa list --group               # 自定义组 ★ 小节 + 其余平铺（TUI 里按 f）
+mfa group set 工作 github jms   # 批量把多条移入自定义分组
 mfa backup                       # 一键时间戳备份
 mfa tui                          # 交互式 TUI：双击复制 / 二维码 / 宠物
 ```

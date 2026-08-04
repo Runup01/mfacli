@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.11] - 2026-08-04
+
+### Added
+- Custom groups: `mfa edit <name|index> --group <group>` assigns any entry to any (auto-created) group, `--group ""` removes it; TUI equivalent is the edit menu `g`. Groups survive export/import (otpauth `&group=` param + JSON)
+- Batch group management: `mfa group list / set <group> <name|index>... / unset <name|index>... / rename <old> <new>` — move any mix of names and indexes into a (auto-created) group in one shot; aborts entirely on any invalid target
+- Group / fold view for long vaults: `mfa list --group` / TUI `f` show your custom groups as ★ sections on top while every other entry stays in the normal flat table; `space` (or double-click on a header) folds/expands a section; `mfa group list` still lists custom + auto groups as an overview
+
+### Changed
+- Group headers redesigned: colored accent bar (`▐`, yellow=custom / cyan=auto) + dotted leader, replacing the plain `──` line
+- Custom-group sections now end with an explicit dim boundary (`○ 其余条目 ╌╌…` in the CLI, a non-selectable divider row in the TUI) so it is always obvious where your groups end and the flat list begins
+
+### Fixed
+- Piping into `head` etc. (`mfa list | head -3`) no longer panics with "Broken pipe" — SIGPIPE default behavior restored, exits quietly like standard Unix tools
+
 ## [0.1.10] - 2026-08-03
 
 ### Changed

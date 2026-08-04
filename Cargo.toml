@@ -1,6 +1,6 @@
 [package]
 name = "mfacli"
-version = "0.1.10"
+version = "0.1.11"
 edition = "2021"
 description = "A developer-friendly, local-first CLI MFA/OTP manager with encrypted storage"
 license = "MIT"
@@ -11,6 +11,9 @@ categories = ["command-line-utilities", "authentication"]
 [[bin]]
 name = "mfa"
 path = "src/main.rs"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

@@ -14,6 +14,9 @@ pub struct OtpEntry {
     pub counter: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_at: Option<String>,
+    /// Custom group (overrides the issuer-derived group); None = auto
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
 }
 
 pub fn today_str() -> String {
@@ -56,6 +59,7 @@ impl OtpEntry {
             otp_type: "totp".to_string(),
             counter: 0,
             created_at: Some(today_str()),
+            group: None,
         })
     }
 
@@ -110,6 +114,12 @@ impl OtpEntry {
             .and_then(|p| p.parse().ok())
             .unwrap_or(30);
         let issuer = params.get("issuer").cloned().or(issuer);
+        // mfacli extension: custom group rides as a non-standard query param;
+        // other authenticator apps simply ignore unknown params.
+        let group = params
+            .get("group")
+            .map(|g| g.trim().to_string())
+            .filter(|g| !g.is_empty());
         // Some URIs (e.g. "otpauth://totp/issuer:?secret=...") carry no name
         // after the colon; fall back to the issuer so the entry is usable.
         let name = if name.is_empty() {
@@ -128,6 +138,7 @@ impl OtpEntry {
             otp_type,
             counter: 0,
             created_at: Some(today_str()),
+            group,
         })
     }
 
@@ -175,6 +186,9 @@ impl OtpEntry {
         if self.otp_type == "hotp" {
             uri.push_str(&format!("&counter={}", self.counter));
         }
+        if let Some(g) = &self.group {
+            uri.push_str(&format!("&group={}", pct_encode(g)));
+        }
         uri
     }
 
@@ -194,6 +208,9 @@ impl OtpEntry {
         uri.push_str(&format!("&period={}", self.period));
         if self.otp_type == "hotp" {
             uri.push_str(&format!("&counter={}", self.counter));
+        }
+        if let Some(g) = &self.group {
+            uri.push_str(&format!("&group={}", g));
         }
         uri
     }
@@ -267,6 +284,7 @@ mod tests {
             otp_type: "totp".into(),
             counter: 0,
             created_at: None,
+            group: None,
         };
         e.sanitize();
         assert_eq!(e.name, "dongshu.bu@1721358628378104");

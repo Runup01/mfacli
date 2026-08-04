@@ -17,10 +17,18 @@ mod utils;
 mod weather;
 
 use clap::Parser;
-use cli::{Cli, Commands};
+use cli::{Cli, Commands, GroupAction};
 use colored::Colorize;
 
 fn main() {
+    // Rust ignores SIGPIPE by default; restore the default handler so piping
+    // into `head` etc. exits quietly (like cat/grep) instead of panicking
+    // with "failed printing to stdout: Broken pipe".
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+
     // Intercept clap's own errors so we can rephrase them kindly.
     // (--help / --version also arrive as Err; print them as-is and exit 0.)
     let cli = match Cli::try_parse() {
@@ -127,7 +135,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         std::env::set_var("MFA_NO_KEYCHAIN", "1");
     }
     match cli.command {
-        None => cmd_list(None, false),
+        None => cmd_list(None, false, false),
         Some(Commands::Tui) => cmd_tui(),
         Some(Commands::Init { encrypt }) => cmd_init(encrypt),
         Some(Commands::Lock { backup }) => cmd_lock(backup.as_deref()),
@@ -160,20 +168,27 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         }) => cmd_scan(&paths, name.as_deref(), filter.as_deref(), &conflict),
         Some(Commands::Backup { output, plain }) => cmd_backup(output.as_deref(), plain),
         Some(Commands::Clear) => cmd_clear(),
-        Some(Commands::List { limit, all }) => cmd_list(limit, all),
+        Some(Commands::List {
+            limit,
+            all,
+            group,
+        }) => cmd_list(limit, all, group),
         Some(Commands::Edit {
             name,
             rename,
             secret,
             issuer,
+            group,
         }) => cmd_edit(
             &name,
             rename.as_deref(),
             secret.as_deref(),
             issuer.as_deref(),
+            group.as_deref(),
         ),
         Some(Commands::Rename { old, new }) => cmd_rename(&old, &new),
         Some(Commands::Remove { names, filter }) => cmd_remove(&names, filter.as_deref()),
+        Some(Commands::Group { action }) => cmd_group(action),
         Some(Commands::Export { output, format }) => cmd_export(output.as_deref(), &format),
         Some(Commands::Import {
             source,
@@ -326,6 +341,9 @@ fn cmd_show(name: &str) -> Result<(), Box<dyn std::error::Error>> {
         "Issuer:".bold(),
         entry.issuer.as_deref().unwrap_or("-")
     );
+    if let Some(g) = &entry.group {
+        println!("  {} {}", "Group:".bold(), g.yellow());
+    }
     println!("  {} {}", "Secret:".bold(), entry.secret.yellow());
     println!("  {} {}", "Algorithm:".bold(), entry.algorithm);
     println!("  {} {}", "Digits:".bold(), entry.digits);
@@ -737,7 +755,11 @@ fn pad_to_width(s: &str, target: usize) -> String {
     }
 }
 
-fn cmd_list(limit: Option<usize>, show_all: bool) -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_list(
+    limit: Option<usize>,
+    show_all: bool,
+    group: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let vault = storage::vault::Vault::load()?;
     let entries = vault.list_entries();
 
@@ -889,8 +911,44 @@ fn cmd_list(limit: Option<usize>, show_all: bool) -> Result<(), Box<dyn std::err
     );
     println!("  {}", "─".repeat(inner_w).dimmed());
 
-    // ── Data rows ──
+    // ── Data rows ── (group mode: custom groups as ★ sections on top,
+    // everything else displayed flat after a clear separator)
+    let mut last_id: Option<(bool, String)> = None;
+    let mut sep_printed = false;
     for (idx, entry) in display_entries.iter().enumerate() {
+        if group {
+            let id = group_id(entry);
+            if id.0 && last_id.as_ref() != Some(&id) {
+                if last_id.is_none() {
+                    println!("  {}", "★ 自定义分组".yellow().bold());
+                }
+                let count = display_entries[idx..]
+                    .iter()
+                    .filter(|e| group_id(e) == id)
+                    .count();
+                let head_raw = format!("▐ {} · {} ★ ", id.1, count);
+                let head = format!(
+                    "{} {} · {} {} ",
+                    "▐".yellow(),
+                    id.1.yellow().bold(),
+                    count.to_string().dimmed(),
+                    "★".yellow()
+                );
+                let fill = inner_w.saturating_sub(display_width(&head_raw));
+                println!("  {}{}", head, "╌".repeat(fill).dimmed());
+                last_id = Some(id);
+            } else if !id.0 && !sep_printed {
+                // Boundary: custom groups end here, the rest is the flat table
+                let sep_raw = format!("○ {} ", "其余条目");
+                let fill = inner_w.saturating_sub(display_width(&sep_raw));
+                println!(
+                    "  {}{}",
+                    "○ 其余条目 ".dimmed(),
+                    "╌".repeat(fill).dimmed()
+                );
+                sep_printed = true;
+            }
+        }
         let (code, code_ok) = match otp::generate_code(entry) {
             Ok(c) => (c, true),
             Err(_) => ("------".to_string(), false),
@@ -982,14 +1040,49 @@ fn truncate_str(s: &str, max_w: usize) -> String {
     format!("{}…", truncated)
 }
 
-/// Sort entries in the order `mfa list` displays them (issuer → name).
+/// Auto group key: issuer if present, else the name prefix before the
+/// first ':', else "other".
+fn auto_group_key(entry: &storage::models::OtpEntry) -> String {
+    if let Some(iss) = entry
+        .issuer
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        return iss.to_string();
+    }
+    if let Some(pos) = entry.name.find(':') {
+        if pos > 0 {
+            return entry.name[..pos].to_string();
+        }
+    }
+    "other".to_string()
+}
+
+/// Effective group identity: (is_custom, key).
+/// Custom = explicit `group` field; otherwise falls back to the auto key.
+fn group_id(entry: &storage::models::OtpEntry) -> (bool, String) {
+    if let Some(g) = entry
+        .group
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        return (true, g.to_string());
+    }
+    (false, auto_group_key(entry))
+}
+
+/// Sort entries in the order `mfa list` displays them
+/// (custom groups first, then group key → name), so flat and `--group`
+/// views share one canonical order and indexes match.
 fn sorted_entries(entries: &[storage::models::OtpEntry]) -> Vec<&storage::models::OtpEntry> {
     let mut sorted: Vec<&storage::models::OtpEntry> = entries.iter().collect();
     sorted.sort_by(|a, b| {
-        let ia = a.issuer.as_deref().unwrap_or("");
-        let ib = b.issuer.as_deref().unwrap_or("");
-        ia.to_lowercase()
-            .cmp(&ib.to_lowercase())
+        let (ca, ka) = group_id(a);
+        let (cb, kb) = group_id(b);
+        cb.cmp(&ca) // custom groups first
+            .then_with(|| ka.to_lowercase().cmp(&kb.to_lowercase()))
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
     sorted
@@ -1040,6 +1133,36 @@ fn resolve_target(
     Err(format!("Entry '{}' not found (see `mfa list`)", arg).into())
 }
 
+/// (name, issuer) identity of a unique entry.
+type EntryId = (String, Option<String>);
+
+fn entries_word(n: usize) -> &'static str {
+    if n == 1 { "entry" } else { "entries" }
+}
+
+/// Resolve multiple `<name|index>` args; abort on any invalid target.
+fn resolve_targets(
+    vault: &storage::vault::Vault,
+    names: &[String],
+) -> Result<Vec<EntryId>, Box<dyn std::error::Error>> {
+    let mut resolved: Vec<EntryId> = Vec::new();
+    let mut errors: Vec<String> = Vec::new();
+    for arg in names {
+        match resolve_target(vault, arg) {
+            Ok(pair) => {
+                if !resolved.contains(&pair) {
+                    resolved.push(pair);
+                }
+            }
+            Err(e) => errors.push(e.to_string()),
+        }
+    }
+    if !errors.is_empty() {
+        return Err(errors.join("; ").into());
+    }
+    Ok(resolved)
+}
+
 /// Styled `<name|index>` hint with the word highlighted for visibility.
 fn arg_hint(cmd: &str) -> String {
     format!(
@@ -1064,17 +1187,18 @@ fn cmd_edit(
     rename: Option<&str>,
     secret: Option<&str>,
     issuer: Option<&str>,
+    group: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut vault = storage::vault::Vault::load()?;
     let (rn, ri) = resolve_target(&vault, name)?;
     let name = rn.as_str();
     let issuer_q = ri.clone();
 
-    if rename.is_none() && secret.is_none() && issuer.is_none() {
+    if rename.is_none() && secret.is_none() && issuer.is_none() && group.is_none() {
         // Note: secret = Some("") means user wants interactive prompt
     }
     let want_secret_change = secret.is_some();
-    if rename.is_none() && !want_secret_change && issuer.is_none() {
+    if rename.is_none() && !want_secret_change && issuer.is_none() && group.is_none() {
         // Show current entry info if no changes specified
         let entry = vault.get_entry(name, issuer_q.as_deref())?;
         println!();
@@ -1084,11 +1208,16 @@ fn cmd_edit(
             "Issuer:".bold(),
             entry.issuer.as_deref().unwrap_or("-")
         );
+        println!(
+            "  {} {}",
+            "Group:".bold(),
+            entry.group.as_deref().unwrap_or("-").yellow()
+        );
         println!("  {} {}", "Secret:".bold(), entry.secret.yellow());
         println!("  {} {}", "Algorithm:".bold(), entry.algorithm);
         println!();
         println!(
-            "  Usage: mfa edit {} --rename <new> --secret --issuer <new>",
+            "  Usage: mfa edit {} --rename <new> --secret --issuer <new> --group <name>",
             name
         );
         println!("  (use --secret without a value to type it securely, hidden)");
@@ -1146,6 +1275,10 @@ fn cmd_edit(
             Some(i.to_string())
         };
     }
+    if let Some(g) = group {
+        let g = g.trim();
+        entry.group = if g.is_empty() { None } else { Some(g.to_string()) };
+    }
 
     vault.save()?;
     println!("{} Updated '{}'", "✓".green(), name);
@@ -1158,22 +1291,8 @@ fn cmd_remove(names: &[String], filter: Option<&str>) -> Result<(), Box<dyn std:
     }
     let mut vault = storage::vault::Vault::load()?;
 
-    // Resolve all targets first; abort entirely if any is invalid (no partial deletes)
-    let mut resolved: Vec<(String, Option<String>)> = Vec::new();
-    let mut errors: Vec<String> = Vec::new();
-    for arg in names {
-        match resolve_target(&vault, arg) {
-            Ok(pair) => {
-                if !resolved.contains(&pair) {
-                    resolved.push(pair);
-                }
-            }
-            Err(e) => errors.push(e.to_string()),
-        }
-    }
-    if !errors.is_empty() {
-        return Err(errors.join("; ").into());
-    }
+    // Resolve all targets first; abort entirely if any is invalid (no partial changes)
+    let mut resolved = resolve_targets(&vault, names)?;
 
     // --filter 批量删：列命中 → 自动备份 → yes 确认
     if let Some(pat) = filter {
@@ -1237,6 +1356,175 @@ fn cmd_remove(names: &[String], filter: Option<&str>) -> Result<(), Box<dyn std:
             resolved.len(),
             names_str.join(", ")
         );
+    }
+    Ok(())
+}
+
+fn cmd_group(action: GroupAction) -> Result<(), Box<dyn std::error::Error>> {
+    let mut vault = storage::vault::Vault::load()?;
+    match action {
+        GroupAction::List => {
+            let entries = vault.list_entries();
+            if entries.is_empty() {
+                println!("\n  No entries yet.\n");
+                return Ok(());
+            }
+            let sorted = sorted_entries(entries);
+            let custom: Vec<&storage::models::OtpEntry> = sorted
+                .iter()
+                .copied()
+                .filter(|e| group_id(e).0)
+                .collect();
+            let auto: Vec<&storage::models::OtpEntry> = sorted
+                .iter()
+                .copied()
+                .filter(|e| !group_id(e).0)
+                .collect();
+
+            /// Print one GROUP/COUNT/MEMBERS table for the given rows.
+            fn print_groups(rows: &[&storage::models::OtpEntry]) {
+                let key_w = rows
+                    .iter()
+                    .map(|e| display_width(&group_id(e).1))
+                    .max()
+                    .unwrap_or(5)
+                    .max(5);
+                println!(
+                    "  {}  {}  {}",
+                    pad_to_width("GROUP", key_w).blue().bold(),
+                    pad_to_width("COUNT", 5).dimmed(),
+                    "MEMBERS".bold()
+                );
+                println!("  {}", "─".repeat(key_w + 2 + 5 + 2 + 30).dimmed());
+                let mut last_key: Option<String> = None;
+                for entry in rows {
+                    let key = group_id(entry).1;
+                    if last_key.as_deref() == Some(key.as_str()) {
+                        continue;
+                    }
+                    let names: Vec<String> = rows
+                        .iter()
+                        .filter(|m| group_id(m).1 == key)
+                        .map(|m| m.name.clone())
+                        .collect();
+                    println!(
+                        "  {}  {}  {}",
+                        pad_to_width(&key, key_w).yellow(),
+                        pad_to_width(&names.len().to_string(), 5),
+                        names.join(", ").cyan(),
+                    );
+                    last_key = Some(key);
+                }
+            }
+
+            if custom.is_empty() {
+                println!();
+                println!(
+                    "  {} {}",
+                    "★ 自定义分组：暂无".dimmed(),
+                    "（mfa group set <组名> <name|index>... 创建）".dimmed()
+                );
+            } else {
+                println!();
+                println!("  {}", "★ 自定义分组".yellow().bold());
+                print_groups(&custom);
+            }
+            if !auto.is_empty() {
+                println!();
+                println!(
+                    "  {}",
+                    "○ 自动分组（issuer → 名称前缀 → other）".dimmed()
+                );
+                print_groups(&auto);
+            }
+            println!();
+            println!(
+                "  {}  {}  {}",
+                "tip".dimmed(),
+                "mfa group set <group> <name|index>...".cyan(),
+                "mfa group unset <name|index>...".cyan(),
+            );
+            println!();
+        }
+        GroupAction::Set { group, names } => {
+            if names.is_empty() {
+                return Err(
+                    "Usage: mfa group set <GROUP> <name|index>... — batch-move entries into one group"
+                        .into(),
+                );
+            }
+            let g = group.trim();
+            if g.is_empty() {
+                return Err(
+                    "Group name cannot be empty; to ungroup use `mfa group unset <name|index>...`"
+                        .into(),
+                );
+            }
+            let resolved = resolve_targets(&vault, &names)?;
+            for (n, i) in &resolved {
+                vault.get_entry_mut(n, i.as_deref())?.group = Some(g.to_string());
+            }
+            vault.save()?;
+            let moved: Vec<&str> = resolved.iter().map(|(n, _)| n.as_str()).collect();
+            println!(
+                "{} Moved {} {} → group '{}': {}",
+                "✓".green(),
+                resolved.len(),
+                entries_word(resolved.len()),
+                g.yellow().bold(),
+                moved.join(", ")
+            );
+        }
+        GroupAction::Unset { names } => {
+            if names.is_empty() {
+                return Err(
+                    "Usage: mfa group unset <name|index>... — remove entries from their groups"
+                        .into(),
+                );
+            }
+            let resolved = resolve_targets(&vault, &names)?;
+            for (n, i) in &resolved {
+                vault.get_entry_mut(n, i.as_deref())?.group = None;
+            }
+            vault.save()?;
+            let moved: Vec<&str> = resolved.iter().map(|(n, _)| n.as_str()).collect();
+            println!(
+                "{} Ungrouped {} {} (back to auto): {}",
+                "✓".green(),
+                resolved.len(),
+                entries_word(resolved.len()),
+                moved.join(", ")
+            );
+        }
+        GroupAction::Rename { old, new } => {
+            let new = new.trim().to_string();
+            if new.is_empty() {
+                return Err("New group name cannot be empty; to dissolve a group use `mfa group unset` on its members".into());
+            }
+            let members: Vec<(String, Option<String>)> = vault
+                .list_entries()
+                .iter()
+                .filter(|e| e.group.as_deref() == Some(old.as_str()))
+                .map(|e| (e.name.clone(), e.issuer.clone()))
+                .collect();
+            if members.is_empty() {
+                return Err(
+                    format!("Custom group '{}' not found (see `mfa group list`)", old).into(),
+                );
+            }
+            for (n, i) in &members {
+                vault.get_entry_mut(n, i.as_deref())?.group = Some(new.clone());
+            }
+            vault.save()?;
+            println!(
+                "{} Renamed group '{}' → '{}' ({} {})",
+                "✓".green(),
+                old,
+                new.yellow().bold(),
+                members.len(),
+                entries_word(members.len())
+            );
+        }
     }
     Ok(())
 }

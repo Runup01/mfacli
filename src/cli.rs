@@ -125,6 +125,10 @@ pub enum Commands {
         /// Show all entries (no limit)
         #[arg(long)]
         all: bool,
+
+        /// Group entries by issuer (or name prefix) with section headers
+        #[arg(short, long)]
+        group: bool,
     },
 
     /// Rename an entry (shortcut for `edit --rename`)
@@ -136,7 +140,7 @@ pub enum Commands {
         new: String,
     },
 
-    /// Edit an entry: name / secret / issuer (entry by name or index)
+    /// Edit an entry: name / secret / issuer / group (entry by name or index)
     Edit {
         /// Entry name or index (INDEX column of `mfa list`)
         name: String,
@@ -152,6 +156,10 @@ pub enum Commands {
         /// New issuer
         #[arg(short, long)]
         issuer: Option<String>,
+
+        /// Group name ("" removes the entry from its group)
+        #[arg(short, long)]
+        group: Option<String>,
     },
 
     /// Remove entries: by name/index, or bulk delete with --filter
@@ -162,6 +170,12 @@ pub enum Commands {
         /// Bulk delete all entries whose name/issuer match (supports | or, * wildcard, ^/$ anchors; auto-backup + yes confirm)
         #[arg(short, long)]
         filter: Option<String>,
+    },
+
+    /// Manage custom groups: batch move entries in/out, list, rename
+    Group {
+        #[command(subcommand)]
+        action: GroupAction,
     },
 
     /// Export entries
@@ -236,5 +250,35 @@ pub enum Commands {
         /// Restore all settings to defaults
         #[arg(long)]
         reset: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum GroupAction {
+    /// List all groups with their members (★ = custom group)
+    List,
+
+    /// Move entries into a group (created automatically)
+    Set {
+        /// Group name
+        group: String,
+
+        /// Entry names or indexes (INDEX column of `mfa list`), space-separated
+        names: Vec<String>,
+    },
+
+    /// Remove entries from their groups (back to auto grouping)
+    Unset {
+        /// Entry names or indexes (INDEX column of `mfa list`), space-separated
+        names: Vec<String>,
+    },
+
+    /// Rename a custom group (members keep following it)
+    Rename {
+        /// Current group name
+        old: String,
+
+        /// New group name
+        new: String,
     },
 }

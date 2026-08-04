@@ -20,6 +20,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
     Frame, Terminal,
 };
+use std::collections::HashSet;
 use std::io::stdout;
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -175,8 +176,47 @@ enum Mode {
     EditSecret,
     EditName,
     EditIssuer,
+    EditGroup,
     ImportPath,
     ExportPath,
+}
+
+/// One visible row in the token list: a group header or an entry.
+enum VisRow {
+    Header(bool, String, usize), // is_custom, group key, member count
+    Entry(usize),                // index into `entries`
+    Sep,                         // boundary between custom sections and flat rows
+}
+
+/// Auto group key: issuer if present, else name prefix before the first ':'.
+fn auto_group_key(entry: &OtpEntry) -> String {
+    if let Some(iss) = entry
+        .issuer
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        return iss.to_string();
+    }
+    if let Some(pos) = entry.name.find(':') {
+        if pos > 0 {
+            return entry.name[..pos].to_string();
+        }
+    }
+    "other".to_string()
+}
+
+/// Effective group identity: (is_custom, key); custom = explicit `group` field.
+fn group_id(entry: &OtpEntry) -> (bool, String) {
+    if let Some(g) = entry
+        .group
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        return (true, g.to_string());
+    }
+    (false, auto_group_key(entry))
 }
 
 pub struct TuiApp {
@@ -206,6 +246,9 @@ pub struct TuiApp {
     list_area: Rect,
     // Last backup file path (copyable via `b` in Normal mode)
     last_backup_path: Option<String>,
+    // Group / fold view
+    group_mode: bool,
+    collapsed: HashSet<(bool, String)>,
 }
 
 enum StatusKind {
@@ -269,6 +312,8 @@ impl TuiApp {
             last_click_time: None,
             list_area: Rect::default(),
             last_backup_path: None,
+            group_mode: false,
+            collapsed: HashSet::new(),
         }
     }
 
@@ -335,10 +380,19 @@ impl TuiApp {
                                     && mouse.column >= area.x
                                     && mouse.column < area.x + area.width
                                 {
-                                    let idx = (mouse.row - area.y - 1) as usize;
-                                    if idx < self.entries.len() {
-                                        self.list_state.select(Some(idx));
-                                        self.copy_selected();
+                                    let row = (mouse.row - area.y - 1) as usize;
+                                    let rows = self.visible_rows();
+                                    match rows.get(row) {
+                                        Some(VisRow::Entry(_)) => {
+                                            self.list_state.select(Some(row));
+                                            self.copy_selected();
+                                        }
+                                        Some(VisRow::Header(_, _, _)) => {
+                                            self.list_state.select(Some(row));
+                                            self.toggle_collapse_here();
+                                        }
+                                        Some(VisRow::Sep) => {}
+                                        None => {}
                                     }
                                 }
                                 self.last_click_time = None;
@@ -404,6 +458,7 @@ impl TuiApp {
             Mode::EditSecret
             | Mode::EditName
             | Mode::EditIssuer
+            | Mode::EditGroup
             | Mode::ImportPath
             | Mode::ExportPath => self.handle_input(key),
         }
@@ -424,17 +479,15 @@ impl TuiApp {
                     Some(("Enter name for new entry:".to_string(), StatusKind::Info));
             }
             KeyCode::Char('d') => {
-                if self.list_state.selected().is_some() {
+                if let Some(idx) = self.selected_entry() {
                     self.mode = Mode::ConfirmDelete;
-                    let name = self.entries[self.list_state.selected().unwrap()]
-                        .name
-                        .clone();
+                    let name = self.entries[idx].name.clone();
                     self.status_message =
                         Some((format!("Delete '{}'? [y/N]", name), StatusKind::Error));
                 }
             }
             KeyCode::Char('r') => {
-                if let Some(idx) = self.list_state.selected() {
+                if let Some(idx) = self.selected_entry() {
                     self.input_buffer = self.entries[idx].name.clone();
                     self.mode = Mode::Rename;
                     self.status_message = Some(("New name:".to_string(), StatusKind::Info));
@@ -444,7 +497,7 @@ impl TuiApp {
                 self.show_qr_overlay();
             }
             KeyCode::Char('e') => {
-                if self.list_state.selected().is_some() {
+                if self.selected_entry().is_some() {
                     self.mode = Mode::EditMenu;
                 }
             }
@@ -466,13 +519,29 @@ impl TuiApp {
                     StatusKind::Info,
                 )),
             },
+            KeyCode::Char('f') => {
+                self.group_mode = !self.group_mode;
+                self.clamp_selection();
+                self.status_message = Some((
+                    if self.group_mode {
+                        "Grouped view: [space] fold/expand · [f] back to flat".to_string()
+                    } else {
+                        "Flat view".to_string()
+                    },
+                    StatusKind::Info,
+                ));
+            }
+            KeyCode::Char(' ') if self.group_mode => self.toggle_collapse_here(),
             KeyCode::Home | KeyCode::Char('g') => {
-                if !self.entries.is_empty() {
+                if !self.visible_rows().is_empty() {
                     self.list_state.select(Some(0));
                 }
             }
-            KeyCode::End | KeyCode::Char('G') if !self.entries.is_empty() => {
-                self.list_state.select(Some(self.entries.len() - 1));
+            KeyCode::End | KeyCode::Char('G') => {
+                let n = self.visible_rows().len();
+                if n > 0 {
+                    self.list_state.select(Some(n - 1));
+                }
             }
             _ => {}
         }
@@ -519,6 +588,9 @@ impl TuiApp {
                     Mode::EditIssuer => {
                         self.finish_edit_issuer(&value);
                     }
+                    Mode::EditGroup => {
+                        self.finish_edit_group(&value);
+                    }
                     Mode::ImportPath => {
                         self.finish_import(&value);
                     }
@@ -541,15 +613,11 @@ impl TuiApp {
     fn handle_confirm_delete(&mut self, key: KeyCode) {
         match key {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
-                if let Some(idx) = self.list_state.selected() {
+                if let Some(idx) = self.selected_entry() {
                     let name = self.entries[idx].name.clone();
                     self.entries.remove(idx);
                     self.save_vault();
-                    if self.entries.is_empty() {
-                        self.list_state.select(None);
-                    } else if idx >= self.entries.len() {
-                        self.list_state.select(Some(self.entries.len() - 1));
-                    }
+                    self.clamp_selection();
                     self.status_message =
                         Some((format!("Deleted '{}'", name), StatusKind::Success));
                 }
@@ -806,7 +874,13 @@ impl TuiApp {
                 }
                 self.entries.push(entry);
                 self.save_vault();
-                self.list_state.select(Some(self.entries.len() - 1));
+                let new_idx = self.entries.len() - 1;
+                if self.group_mode {
+                    self.collapsed.remove(&group_id(&self.entries[new_idx]));
+                }
+                if let Some(row) = self.row_of_entry(new_idx) {
+                    self.list_state.select(Some(row));
+                }
                 self.status_message = Some((format!("Added '{}'", name), StatusKind::Success));
                 self.pet_mood = PetMood::Happy;
                 self.mood_timer = Some(Instant::now());
@@ -822,7 +896,7 @@ impl TuiApp {
     }
 
     fn finish_rename(&mut self, new_name: &str) {
-        if let Some(idx) = self.list_state.selected() {
+        if let Some(idx) = self.selected_entry() {
             let old = self.entries[idx].name.clone();
             let iss = self.entries[idx].issuer.clone();
             if self
@@ -845,7 +919,7 @@ impl TuiApp {
     }
 
     fn show_qr_overlay(&mut self) {
-        if let Some(idx) = self.list_state.selected() {
+        if let Some(idx) = self.selected_entry() {
             if let Some(entry) = self.entries.get(idx) {
                 let uri = entry.to_otpauth_uri();
                 match crate::utils::qrcode_util::render_qr(&uri, &self.config.qr_style) {
@@ -868,29 +942,60 @@ impl TuiApp {
                 self.mode = Mode::Normal;
             }
             KeyCode::Char('n') | KeyCode::Char('1') => {
-                if let Some(idx) = self.list_state.selected() {
+                if let Some(idx) = self.selected_entry() {
                     self.input_buffer = self.entries[idx].name.clone();
                     self.mode = Mode::EditName;
                     self.status_message = Some(("New name:".to_string(), StatusKind::Info));
                 }
             }
             KeyCode::Char('i') | KeyCode::Char('2') => {
-                if let Some(idx) = self.list_state.selected() {
+                if let Some(idx) = self.selected_entry() {
                     self.input_buffer = self.entries[idx].issuer.clone().unwrap_or_default();
                     self.mode = Mode::EditIssuer;
                     self.status_message = Some(("New issuer:".to_string(), StatusKind::Info));
                 }
             }
             KeyCode::Char('s') | KeyCode::Char('3') => {
-                if let Some(idx) = self.list_state.selected() {
+                if let Some(idx) = self.selected_entry() {
                     self.input_buffer = self.entries[idx].secret.clone();
                     self.mode = Mode::EditSecret;
                     self.status_message =
                         Some(("New secret (base32):".to_string(), StatusKind::Info));
                 }
             }
+            KeyCode::Char('g') | KeyCode::Char('4') => {
+                if let Some(idx) = self.selected_entry() {
+                    self.input_buffer = self.entries[idx].group.clone().unwrap_or_default();
+                    self.mode = Mode::EditGroup;
+                    self.status_message = Some((
+                        "Group name (empty = ungroup):".to_string(),
+                        StatusKind::Info,
+                    ));
+                }
+            }
             _ => {}
         }
+    }
+
+    fn finish_edit_group(&mut self, new_group: &str) {
+        if let Some(idx) = self.selected_entry() {
+            let g = new_group.trim();
+            self.entries[idx].group = if g.is_empty() {
+                None
+            } else {
+                Some(g.to_string())
+            };
+            self.save_vault();
+            self.status_message = Some((
+                if g.is_empty() {
+                    format!("Removed '{}' from its group", self.entries[idx].name)
+                } else {
+                    format!("Moved '{}' → group '{}'", self.entries[idx].name, g)
+                },
+                StatusKind::Success,
+            ));
+        }
+        self.mode = Mode::Normal;
     }
 
     fn finish_edit_name(&mut self, new_name: &str) {
@@ -898,7 +1003,7 @@ impl TuiApp {
             self.mode = Mode::Normal;
             return;
         }
-        if let Some(idx) = self.list_state.selected() {
+        if let Some(idx) = self.selected_entry() {
             let iss = self.entries[idx].issuer.clone();
             if self
                 .entries
@@ -921,7 +1026,7 @@ impl TuiApp {
     }
 
     fn finish_edit_issuer(&mut self, new_issuer: &str) {
-        if let Some(idx) = self.list_state.selected() {
+        if let Some(idx) = self.selected_entry() {
             let new_iss: Option<String> = if new_issuer.is_empty() {
                 None
             } else {
@@ -969,6 +1074,7 @@ impl TuiApp {
                     }
                 }
                 self.save_vault();
+                self.clamp_selection();
                 self.status_message = Some((
                     format!("Imported {} entries from {}", count, path),
                     StatusKind::Success,
@@ -1044,7 +1150,7 @@ impl TuiApp {
     }
 
     fn finish_edit_secret(&mut self, new_secret: &str) {
-        if let Some(idx) = self.list_state.selected() {
+        if let Some(idx) = self.selected_entry() {
             let normalized = new_secret.replace([' ', '-'], "").to_uppercase();
             if base32::decode(base32::Alphabet::Rfc4648 { padding: false }, &normalized).is_none() {
                 self.status_message = Some((
@@ -1077,7 +1183,7 @@ impl TuiApp {
     }
 
     fn copy_selected(&mut self) {
-        if let Some(idx) = self.list_state.selected() {
+        if let Some(idx) = self.selected_entry() {
             if let Some(entry) = self.entries.get(idx) {
                 match otp::generate_code(entry) {
                     Ok(code) => match clipboard::copy_to_clipboard(&code) {
@@ -1103,40 +1209,165 @@ impl TuiApp {
         }
     }
 
+    // ─── Group / fold helpers ──────────────────────────────────
+
+    fn visible_rows(&self) -> Vec<VisRow> {
+        if !self.group_mode {
+            return (0..self.entries.len()).map(VisRow::Entry).collect();
+        }
+        let mut order: Vec<usize> = (0..self.entries.len()).collect();
+        order.sort_by(|&a, &b| {
+            let (ca, ka) = group_id(&self.entries[a]);
+            let (cb, kb) = group_id(&self.entries[b]);
+            cb.cmp(&ca) // custom groups first
+                .then_with(|| ka.to_lowercase().cmp(&kb.to_lowercase()))
+                .then_with(|| {
+                    self.entries[a]
+                        .name
+                        .to_lowercase()
+                        .cmp(&self.entries[b].name.to_lowercase())
+                })
+        });
+        // Custom groups become collapsible headers on top; the rest stays flat
+        let mut rows = Vec::new();
+        let mut i = 0;
+        while i < order.len() {
+            let (custom, key) = group_id(&self.entries[order[i]]);
+            if !custom {
+                break; // sorted order ⇒ all custom entries come first
+            }
+            let mut members = vec![order[i]];
+            i += 1;
+            while i < order.len() {
+                let (c2, k2) = group_id(&self.entries[order[i]]);
+                if c2 && k2 == key {
+                    members.push(order[i]);
+                    i += 1;
+                } else {
+                    break;
+                }
+            }
+            rows.push(VisRow::Header(true, key.clone(), members.len()));
+            if !self.collapsed.contains(&(true, key)) {
+                rows.extend(members.into_iter().map(VisRow::Entry));
+            }
+        }
+        if !rows.is_empty() && i < order.len() {
+            rows.push(VisRow::Sep);
+        }
+        rows.extend(order[i..].iter().map(|&idx| VisRow::Entry(idx)));
+        rows
+    }
+
+    /// Entry index behind the selected visible row (None on group headers).
+    fn selected_entry(&self) -> Option<usize> {
+        let sel = self.list_state.selected()?;
+        match self.visible_rows().get(sel)? {
+            VisRow::Entry(i) => Some(*i),
+            VisRow::Header(_, _, _) => None,
+            VisRow::Sep => None,
+        }
+    }
+
+    fn row_of_entry(&self, entry_idx: usize) -> Option<usize> {
+        self.visible_rows()
+            .iter()
+            .position(|r| matches!(r, VisRow::Entry(i) if *i == entry_idx))
+    }
+
+    fn clamp_selection(&mut self) {
+        let rows = self.visible_rows();
+        let n = rows.len();
+        match self.list_state.selected() {
+            None if n == 0 => {}
+            None => self.list_state.select(Some(0)),
+            Some(s) if s >= n => self.list_state.select(Some(n - 1)),
+            Some(s) if matches!(rows[s], VisRow::Sep) => {
+                self.list_state.select(Some(self.step_row(s, 1, &rows)));
+            }
+            _ => {}
+        }
+    }
+
+    fn toggle_collapse_here(&mut self) {
+        let Some(sel) = self.list_state.selected() else {
+            return;
+        };
+        let id = match self.visible_rows().get(sel) {
+            Some(VisRow::Header(custom, k, _)) => (*custom, k.clone()),
+            Some(VisRow::Entry(i)) => {
+                let id = group_id(&self.entries[*i]);
+                if !id.0 {
+                    return; // flat row: nothing to collapse
+                }
+                id
+            }
+            Some(VisRow::Sep) => return,
+            None => return,
+        };
+        if self.collapsed.contains(&id) {
+            self.collapsed.remove(&id);
+        } else {
+            self.collapsed.insert(id);
+            self.clamp_selection();
+        }
+    }
+
+    /// Next selectable row in the given direction, skipping separators.
+    fn step_row(&self, from: usize, dir: i32, rows: &[VisRow]) -> usize {
+        let n = rows.len();
+        let mut cur = from;
+        loop {
+            cur = if dir < 0 {
+                if cur == 0 {
+                    n - 1
+                } else {
+                    cur - 1
+                }
+            } else if cur >= n - 1 {
+                0
+            } else {
+                cur + 1
+            };
+            if !matches!(rows[cur], VisRow::Sep) {
+                return cur;
+            }
+        }
+    }
+
     fn move_up(&mut self) {
-        if self.entries.is_empty() {
+        let rows = self.visible_rows();
+        if rows.is_empty() {
             return;
         }
         let current = self.list_state.selected().unwrap_or(0);
-        let prev = if current == 0 {
-            self.entries.len() - 1
-        } else {
-            current - 1
-        };
-        self.list_state.select(Some(prev));
+        self.list_state
+            .select(Some(self.step_row(current, -1, &rows)));
     }
 
     fn move_page(&mut self, dir: i32) {
-        if self.entries.is_empty() {
+        let rows = self.visible_rows();
+        let n = rows.len();
+        if n == 0 {
             return;
         }
-        let page = 10.min(self.entries.len()) as i32;
+        let page = 10.min(n) as i32;
         let cur = self.list_state.selected().unwrap_or(0) as i32;
-        let next = (cur + dir * page).clamp(0, self.entries.len() as i32 - 1);
-        self.list_state.select(Some(next as usize));
+        let mut next = (cur + dir * page).clamp(0, n as i32 - 1) as usize;
+        if matches!(rows[next], VisRow::Sep) {
+            next = self.step_row(next, dir, &rows);
+        }
+        self.list_state.select(Some(next));
     }
 
     fn move_down(&mut self) {
-        if self.entries.is_empty() {
+        let rows = self.visible_rows();
+        if rows.is_empty() {
             return;
         }
         let current = self.list_state.selected().unwrap_or(0);
-        let next = if current >= self.entries.len() - 1 {
-            0
-        } else {
-            current + 1
-        };
-        self.list_state.select(Some(next));
+        self.list_state
+            .select(Some(self.step_row(current, 1, &rows)));
     }
 
     // ─── Rendering ───────────────────────────────────────────────
@@ -1295,12 +1526,49 @@ impl TuiApp {
         // Show ADDED date column only when the terminal is wide enough
         let base_w = 2 + idx_w + 1 + name_col + 1 + 2 + issuer_col + 8 + 11 + 4;
         let show_added = (area.width as usize) >= base_w + 13;
-        let items: Vec<ListItem> = self
-            .entries
-            .iter()
-            .enumerate()
-            .map(|(idx, entry)| {
-                let sel = idx == selected;
+        let mut items: Vec<ListItem> = Vec::new();
+        for (row_pos, row) in self.visible_rows().iter().enumerate() {
+            if matches!(row, VisRow::Sep) {
+                let w = area.width.saturating_sub(2) as usize;
+                items.push(ListItem::new(Line::from(Span::styled(
+                    "╌".repeat(w),
+                    Style::default().fg(Color::DarkGray),
+                ))));
+                continue;
+            }
+            let VisRow::Entry(idx) = row else {
+                // Group header: ▼/▶ + key + (count); custom groups get ★
+                let VisRow::Header(custom, key, count) = row else { unreachable!() };
+                let sel = row_pos == selected;
+                let id = (*custom, key.clone());
+                let arrow = if self.collapsed.contains(&id) { "▶" } else { "▼" };
+                let header_style = if *custom {
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                        .fg(Color::LightCyan)
+                        .add_modifier(Modifier::BOLD)
+                };
+                let mut spans: Vec<Span> = vec![
+                    Span::styled(
+                        if sel { "▸ " } else { "  " },
+                        Style::default().fg(Color::Yellow),
+                    ),
+                    Span::styled(format!("{:<w$} ", arrow, w = idx_w), header_style),
+                    Span::styled(pad(&trunc(key, 28), name_col + 1), header_style),
+                    Span::styled(format!("({})", count), Style::default().fg(Color::DarkGray)),
+                ];
+                if *custom {
+                    spans.push(Span::styled(" ★", Style::default().fg(Color::Yellow)));
+                }
+                items.push(ListItem::new(Line::from(spans)));
+                continue;
+            };
+            let entry = &self.entries[*idx];
+            {
+                let sel = row_pos == selected;
                 let (code, code_ok) = match otp::generate_code(entry) {
                     Ok(c) => (c, true),
                     Err(_) => ("------".to_string(), false),
@@ -1381,9 +1649,9 @@ impl TuiApp {
                     ));
                 }
 
-                ListItem::new(Line::from(spans))
-            })
-            .collect();
+                items.push(ListItem::new(Line::from(spans)));
+            }
+        }
 
         let list = List::new(items)
             .block(
@@ -1528,12 +1796,20 @@ impl TuiApp {
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(" 密钥  ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    "g",
+                    Style::default()
+                        .fg(Color::LightBlue)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" 分组  ", Style::default().fg(Color::DarkGray)),
                 Span::styled(" [Esc] cancel", Style::default().fg(Color::DarkGray)),
             ]),
-            Mode::EditSecret | Mode::EditName | Mode::EditIssuer => {
+            Mode::EditSecret | Mode::EditName | Mode::EditIssuer | Mode::EditGroup => {
                 let label = match &self.mode {
                     Mode::EditName => "Name",
                     Mode::EditIssuer => "Issuer",
+                    Mode::EditGroup => "Group",
                     _ => "Secret",
                 };
                 Line::from(vec![
@@ -1618,6 +1894,19 @@ impl TuiApp {
                         help.push(("  b".into(), key(Color::LightGreen)));
                         help.push((" 备份路径".into(), dim));
                     }
+                    help.push(("  f".into(), key(Color::LightCyan)));
+                    help.push((
+                        if self.group_mode {
+                            " 平铺".into()
+                        } else {
+                            " 分组".into()
+                        },
+                        dim,
+                    ));
+                    if self.group_mode {
+                        help.push((" 空格".into(), key(Color::LightCyan)));
+                        help.push((" 折叠".into(), dim));
+                    }
                     help.push(("  q".into(), key(Color::Red)));
                     help.push((" 退出".into(), dim));
                     let help_w: usize = help.iter().map(|(t, _)| tw(t)).sum();
@@ -1638,7 +1927,7 @@ impl TuiApp {
                         let short = mid_trunc(&short, inner_w.saturating_sub(help_w));
                         spans.push(Span::styled(" ● ", style));
                         spans.push(Span::styled(format!("{}  ", short), style));
-                    } else if let Some(idx) = self.list_state.selected() {
+                    } else if let Some(idx) = self.selected_entry() {
                         if let Some(entry) = self.entries.get(idx) {
                             spans.push(Span::styled(" ", Style::default()));
                             spans.push(Span::styled(
