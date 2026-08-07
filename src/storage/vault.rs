@@ -288,7 +288,15 @@ impl Vault {
     }
 
     pub fn export_encrypted(&self) -> Result<String, Box<dyn std::error::Error>> {
-        let json = serde_json::to_string_pretty(&self.entries)?;
+        self.export_entries_encrypted(&self.entries)
+    }
+
+    /// Encrypt an arbitrary subset of entries (used by `export --group`).
+    pub fn export_entries_encrypted<T: serde::Serialize>(
+        &self,
+        entries: &[T],
+    ) -> Result<String, Box<dyn std::error::Error>> {
+        let json = serde_json::to_string_pretty(&entries)?;
         let password = Self::get_password()?;
         encryption::encrypt(&json, &password)
     }

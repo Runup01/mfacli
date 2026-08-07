@@ -187,6 +187,10 @@ pub enum Commands {
         /// Export format: otpauth (default, universal) / json (full fidelity) / encrypted (password-protected)
         #[arg(short, long, default_value = "otpauth")]
         format: String,
+
+        /// Only export entries of this group (custom group name or auto group key; see `mfa group list`)
+        #[arg(short, long)]
+        group: Option<String>,
     },
 
     /// Import entries from another tool

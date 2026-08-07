@@ -118,7 +118,7 @@ mfa group rename 堡垒机 跳板机          # 重命名自定义组（成员�
 
 `--filter` 模式批量删（如 `mfa remove -f 'aliyun|tencent'`，支持 `|`/`*`/`^`/`$`）：先列命中条目 → **自动备份** → 输 `yes` 才删。
 
-### `mfa export [-o FILE] [-f FMT]`
+### `mfa export [-o FILE] [-f FMT] [-g GROUP]`
 
 | 格式 | 用途 | 特点 |
 |------|------|------|
@@ -130,7 +130,10 @@ mfa group rename 堡垒机 跳板机          # 重命名自定义组（成员�
 mfa export -o tokens.txt                   # otpauth
 mfa export -f json -o backup.json          # json
 mfa export -f encrypted -o backup.enc      # 加密
+mfa export -g 工作 -o work.txt             # 只导出某个分组（三种格式都可组合）
 ```
+
+`-g/--group`：仅导出属于该组的条目——自定义组名或自动分组键（issuer / 名称前缀），忽略大小写，可用组见 `mfa group list`；组名不存在时错误信息会附上可用组列表。
 
 > 导出的明文文件自动设为 mode 600。妥善保管。
 

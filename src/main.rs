@@ -189,7 +189,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         Some(Commands::Rename { old, new }) => cmd_rename(&old, &new),
         Some(Commands::Remove { names, filter }) => cmd_remove(&names, filter.as_deref()),
         Some(Commands::Group { action }) => cmd_group(action),
-        Some(Commands::Export { output, format }) => cmd_export(output.as_deref(), &format),
+        Some(Commands::Export { output, format, group }) => cmd_export(output.as_deref(), &format, group.as_deref()),
         Some(Commands::Import {
             source,
             path,
@@ -1555,9 +1555,38 @@ fn cmd_group(action: GroupAction) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn cmd_export(output: Option<&str>, format: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_export(
+    output: Option<&str>,
+    format: &str,
+    group: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let vault = storage::vault::Vault::load()?;
-    let entries = vault.list_entries();
+    let all = vault.list_entries();
+    let entries: Vec<&storage::models::OtpEntry> = match group {
+        Some(g) => {
+            let sel: Vec<&storage::models::OtpEntry> = all
+                .iter()
+                .filter(|e| group_id(e).1.eq_ignore_ascii_case(g))
+                .collect();
+            if sel.is_empty() {
+                let mut keys: Vec<String> = all.iter().map(|e| group_id(e).1).collect();
+                keys.sort_by_key(|k| k.to_lowercase());
+                keys.dedup();
+                return Err(format!(
+                    "group '{}' has no entries (available: {}; see `mfa group list`)",
+                    g,
+                    keys.join(", ")
+                )
+                .into());
+            }
+            sel
+        }
+        None => all.iter().collect(),
+    };
+    let scope = match group {
+        Some(g) => format!(" (group '{}')", g),
+        None => String::new(),
+    };
 
     let write_out = |data: &str| -> Result<(), Box<dyn std::error::Error>> {
         match output {
@@ -1574,44 +1603,48 @@ fn cmd_export(output: Option<&str>, format: &str) -> Result<(), Box<dyn std::err
         "json" => {
             let file = storage::models::ExportFile {
                 version: storage::models::ExportFile::VERSION,
-                entries: entries.to_vec(),
+                entries: entries.iter().map(|&e| e.clone()).collect(),
             };
             let data = serde_json::to_string_pretty(&file)?;
             write_out(&data)?;
             if let Some(p) = output {
                 println!(
-                    "{} Exported {} entries as {} → {}",
+                    "{} Exported {} entries as {} → {}{}",
                     "✓".green(),
                     entries.len(),
                     "json".cyan(),
-                    p
+                    p,
+                    scope
                 );
             } else {
                 eprintln!(
-                    "{} {} entries as {}",
+                    "{} {} entries as {}{}",
                     "✓".green(),
                     entries.len(),
-                    "json".cyan()
+                    "json".cyan(),
+                    scope
                 );
             }
         }
         "encrypted" => {
-            let data = vault.export_encrypted()?;
+            let data = vault.export_entries_encrypted(&entries)?;
             write_out(&data)?;
             if let Some(p) = output {
                 println!(
-                    "{} Exported {} entries as {} → {}",
+                    "{} Exported {} entries as {} → {}{}",
                     "✓".green(),
                     entries.len(),
                     "encrypted".cyan(),
-                    p
+                    p,
+                    scope
                 );
             } else {
                 eprintln!(
-                    "{} {} entries as {}",
+                    "{} {} entries as {}{}",
                     "✓".green(),
                     entries.len(),
-                    "encrypted".cyan()
+                    "encrypted".cyan(),
+                    scope
                 );
             }
         }
@@ -1619,7 +1652,7 @@ fn cmd_export(output: Option<&str>, format: &str) -> Result<(), Box<dyn std::err
             // otpauth (default) — the universal, re-importable template
             let mut lines: Vec<String> = Vec::new();
             let mut skipped_steam = 0usize;
-            for e in entries {
+            for e in &entries {
                 if e.otp_type == "steam" {
                     skipped_steam += 1;
                     continue;
@@ -1635,14 +1668,15 @@ fn cmd_export(output: Option<&str>, format: &str) -> Result<(), Box<dyn std::err
             let n = lines.len();
             if let Some(p) = output {
                 println!(
-                    "{} Exported {} entries as {} → {}",
+                    "{} Exported {} entries as {} → {}{}",
                     "✓".green(),
                     n,
                     "otpauth".cyan(),
-                    p
+                    p,
+                    scope
                 );
             } else {
-                eprintln!("{} {} entries as {}", "✓".green(), n, "otpauth".cyan());
+                eprintln!("{} {} entries as {}{}", "✓".green(), n, "otpauth".cyan(), scope);
             }
             if skipped_steam > 0 {
                 eprintln!(
