@@ -7,7 +7,7 @@ use crate::storage::vault::Vault;
 use crate::utils::clipboard;
 use crate::weather;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     event::{DisableMouseCapture, EnableMouseCapture},
     event::{MouseButton, MouseEventKind},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -161,6 +161,28 @@ fn mid_trunc(s: &str, max: usize) -> String {
     format!("{}…{}", take_head(s, head_max), take_tail(s, tail_max))
 }
 
+/// Wrap `s` into lines of at most `max` display columns.
+fn wrap_by_width(s: &str, max: usize) -> Vec<String> {
+    if max == 0 {
+        return vec![s.to_string()];
+    }
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut w = 0usize;
+    for c in s.chars() {
+        let cw = tw(&c.to_string());
+        if w + cw > max {
+            out.push(cur);
+            cur = String::new();
+            w = 0;
+        }
+        cur.push(c);
+        w += cw;
+    }
+    out.push(cur);
+    out
+}
+
 #[derive(PartialEq)]
 enum Mode {
     Normal,
@@ -227,6 +249,8 @@ pub struct TuiApp {
     config: Config,
     mode: Mode,
     input_buffer: String,
+    input_cursor: usize,
+    qr_scroll: usize,
     // Add flow temp data
     add_name: String,
     add_secret: String,
@@ -297,6 +321,8 @@ impl TuiApp {
             config,
             mode: Mode::Normal,
             input_buffer: String::new(),
+            input_cursor: 0,
+            qr_scroll: 0,
             add_name: String::new(),
             add_secret: String::new(),
             add_issuer: String::new(),
@@ -359,10 +385,10 @@ impl TuiApp {
                                 match key.code {
                                     KeyCode::Char('u') => self.move_page(-1),
                                     KeyCode::Char('d') => self.move_page(1),
-                                    _ => self.handle_key(key.code),
+                                    _ => self.handle_key(key),
                                 }
                             } else {
-                                self.handle_key(key.code);
+                                self.handle_key(key);
                             }
                         }
                     }
@@ -437,24 +463,61 @@ impl TuiApp {
         self.almanac_info = almanac::get_almanac();
     }
 
-    fn handle_key(&mut self, key: KeyCode) {
+    fn set_buffer(&mut self, s: String) {
+        self.input_cursor = s.chars().count();
+        self.input_buffer = s;
+    }
+
+    fn clear_buffer(&mut self) {
+        self.input_buffer.clear();
+        self.input_cursor = 0;
+    }
+
+    /// Byte offset of the `char_idx`-th char in `input_buffer`.
+    fn buf_byte_pos(&self, char_idx: usize) -> usize {
+        self.input_buffer
+            .char_indices()
+            .nth(char_idx)
+            .map(|(i, _)| i)
+            .unwrap_or_else(|| self.input_buffer.len())
+    }
+
+    fn handle_key(&mut self, key: KeyEvent) {
+        let code = key.code;
         match self.mode {
-            Mode::Normal => self.handle_normal(key),
+            Mode::Normal => self.handle_normal(code),
             Mode::AddName | Mode::AddSecret | Mode::AddIssuer | Mode::Rename => {
                 self.handle_input(key)
             }
-            Mode::ConfirmDelete => self.handle_confirm_delete(key),
-            Mode::ConfirmClearAll => self.handle_confirm_clear(key),
-            Mode::Settings => self.handle_settings(key),
-            Mode::ViewQR => {
-                if matches!(
-                    key,
-                    KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('v') | KeyCode::Enter
-                ) {
+            Mode::ConfirmDelete => self.handle_confirm_delete(code),
+            Mode::ConfirmClearAll => self.handle_confirm_clear(code),
+            Mode::Settings => self.handle_settings(code),
+            Mode::ViewQR => match code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.qr_scroll = self.qr_scroll.saturating_sub(1);
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    let max = self.qr_lines.len().saturating_sub(1);
+                    self.qr_scroll = (self.qr_scroll + 1).min(max);
+                }
+                KeyCode::Char('c') => {
+                    if let Some(entry) = self.selected_entry().and_then(|i| self.entries.get(i)) {
+                        match clipboard::copy_to_clipboard(&entry.secret) {
+                            Ok(()) => self.status_message = Some((
+                                "✓ 密钥已复制（请勿外泄）".to_string(),
+                                StatusKind::Success,
+                            )),
+                            Err(e) => self.status_message =
+                                Some((format!("复制失败: {}", e), StatusKind::Error)),
+                        }
+                    }
+                }
+                KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('v') | KeyCode::Enter => {
                     self.mode = Mode::Normal;
                 }
-            }
-            Mode::EditMenu => self.handle_edit_menu(key),
+                _ => {}
+            },
+            Mode::EditMenu => self.handle_edit_menu(code),
             Mode::EditSecret
             | Mode::EditName
             | Mode::EditIssuer
@@ -474,7 +537,7 @@ impl TuiApp {
             KeyCode::PageDown => self.move_page(1),
             KeyCode::Char('a') => {
                 self.mode = Mode::AddName;
-                self.input_buffer.clear();
+                self.clear_buffer();
                 self.status_message =
                     Some(("Enter name for new entry:".to_string(), StatusKind::Info));
             }
@@ -488,7 +551,7 @@ impl TuiApp {
             }
             KeyCode::Char('r') => {
                 if let Some(idx) = self.selected_entry() {
-                    self.input_buffer = self.entries[idx].name.clone();
+                    self.set_buffer(self.entries[idx].name.clone());
                     self.mode = Mode::Rename;
                     self.status_message = Some(("New name:".to_string(), StatusKind::Info));
                 }
@@ -547,8 +610,37 @@ impl TuiApp {
         }
     }
 
-    fn handle_input(&mut self, key: KeyCode) {
-        match key {
+    fn handle_input(&mut self, key: KeyEvent) {
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            // Ctrl+V: paste from the system clipboard at the cursor position
+            if matches!(key.code, KeyCode::Char('v') | KeyCode::Char('V')) {
+                match clipboard::get_clipboard() {
+                    Ok(text) => {
+                        let clean: String = text.chars().filter(|c| !c.is_control()).collect();
+                        if clean.is_empty() {
+                            self.status_message =
+                                Some(("剪贴板为空，未粘贴".to_string(), StatusKind::Info));
+                        } else {
+                            let n = clean.chars().count();
+                            let pos = self.buf_byte_pos(self.input_cursor);
+                            self.input_buffer.insert_str(pos, &clean);
+                            self.input_cursor += n;
+                            self.status_message = Some((
+                                format!("✓ 已粘贴 {} 个字符（Ctrl+V）", n),
+                                StatusKind::Success,
+                            ));
+                        }
+                    }
+                    Err(e) => {
+                        self.status_message =
+                            Some((format!("粘贴失败: {}", e), StatusKind::Error));
+                    }
+                }
+            }
+            return; // other Ctrl combos are ignored while typing
+        }
+
+        match key.code {
             KeyCode::Esc => {
                 self.mode = Mode::Normal;
                 self.status_message = None;
@@ -558,14 +650,14 @@ impl TuiApp {
                 match self.mode {
                     Mode::AddName => {
                         self.add_name = value;
-                        self.input_buffer.clear();
+                        self.clear_buffer();
                         self.mode = Mode::AddSecret;
                         self.status_message =
                             Some(("Enter secret (base32):".to_string(), StatusKind::Info));
                     }
                     Mode::AddSecret => {
                         self.add_secret = value;
-                        self.input_buffer.clear();
+                        self.clear_buffer();
                         self.mode = Mode::AddIssuer;
                         self.status_message = Some((
                             "Enter issuer (optional, Enter to skip):".to_string(),
@@ -600,11 +692,41 @@ impl TuiApp {
                     _ => {}
                 }
             }
+            KeyCode::Left => {
+                self.input_cursor = self.input_cursor.saturating_sub(1);
+            }
+            KeyCode::Right => {
+                let n = self.input_buffer.chars().count();
+                if self.input_cursor < n {
+                    self.input_cursor += 1;
+                }
+            }
+            KeyCode::Home => {
+                self.input_cursor = 0;
+            }
+            KeyCode::End => {
+                self.input_cursor = self.input_buffer.chars().count();
+            }
             KeyCode::Backspace => {
-                self.input_buffer.pop();
+                if self.input_cursor > 0 {
+                    let end = self.buf_byte_pos(self.input_cursor);
+                    let start = self.buf_byte_pos(self.input_cursor - 1);
+                    self.input_buffer.replace_range(start..end, "");
+                    self.input_cursor -= 1;
+                }
+            }
+            KeyCode::Delete => {
+                let n = self.input_buffer.chars().count();
+                if self.input_cursor < n {
+                    let start = self.buf_byte_pos(self.input_cursor);
+                    let end = self.buf_byte_pos(self.input_cursor + 1);
+                    self.input_buffer.replace_range(start..end, "");
+                }
             }
             KeyCode::Char(c) => {
-                self.input_buffer.push(c);
+                let pos = self.buf_byte_pos(self.input_cursor);
+                self.input_buffer.insert(pos, c);
+                self.input_cursor += 1;
             }
             _ => {}
         }
@@ -738,7 +860,7 @@ impl TuiApp {
             }
             5 => {
                 // Import
-                self.input_buffer.clear();
+                self.clear_buffer();
                 self.mode = Mode::ImportPath;
                 self.status_message = Some((
                     "Import file path (otpauth/json/csv):".to_string(),
@@ -747,7 +869,7 @@ impl TuiApp {
             }
             6 => {
                 // Export
-                self.input_buffer.clear();
+                self.clear_buffer();
                 self.mode = Mode::ExportPath;
                 self.status_message = Some(("Export file path:".to_string(), StatusKind::Info));
             }
@@ -942,6 +1064,8 @@ impl TuiApp {
                 match crate::utils::qrcode_util::render_qr(&uri, &self.config.qr_style) {
                     Ok(qr) => {
                         self.qr_lines = qr.lines().map(|l| l.to_string()).collect();
+                        self.qr_scroll = 0;
+                        self.status_message = None;
                         self.mode = Mode::ViewQR;
                     }
                     Err(_) => {
@@ -960,21 +1084,21 @@ impl TuiApp {
             }
             KeyCode::Char('n') | KeyCode::Char('1') => {
                 if let Some(idx) = self.selected_entry() {
-                    self.input_buffer = self.entries[idx].name.clone();
+                    self.set_buffer(self.entries[idx].name.clone());
                     self.mode = Mode::EditName;
                     self.status_message = Some(("New name:".to_string(), StatusKind::Info));
                 }
             }
             KeyCode::Char('i') | KeyCode::Char('2') => {
                 if let Some(idx) = self.selected_entry() {
-                    self.input_buffer = self.entries[idx].issuer.clone().unwrap_or_default();
+                    self.set_buffer(self.entries[idx].issuer.clone().unwrap_or_default());
                     self.mode = Mode::EditIssuer;
                     self.status_message = Some(("New issuer:".to_string(), StatusKind::Info));
                 }
             }
             KeyCode::Char('s') | KeyCode::Char('3') => {
                 if let Some(idx) = self.selected_entry() {
-                    self.input_buffer = self.entries[idx].secret.clone();
+                    self.set_buffer(self.entries[idx].secret.clone());
                     self.mode = Mode::EditSecret;
                     self.status_message =
                         Some(("New secret (base32):".to_string(), StatusKind::Info));
@@ -982,7 +1106,7 @@ impl TuiApp {
             }
             KeyCode::Char('g') | KeyCode::Char('4') => {
                 if let Some(idx) = self.selected_entry() {
-                    self.input_buffer = self.entries[idx].group.clone().unwrap_or_default();
+                    self.set_buffer(self.entries[idx].group.clone().unwrap_or_default());
                     self.mode = Mode::EditGroup;
                     self.status_message = Some((
                         "Group name (empty = ungroup):".to_string(),
@@ -1444,6 +1568,23 @@ impl TuiApp {
         if self.mode == Mode::Settings {
             self.render_settings_popup(f);
         }
+
+        // Input popup (add / rename / edit / import / export)
+        if matches!(
+            self.mode,
+            Mode::AddName
+                | Mode::AddSecret
+                | Mode::AddIssuer
+                | Mode::Rename
+                | Mode::EditSecret
+                | Mode::EditName
+                | Mode::EditIssuer
+                | Mode::EditGroup
+                | Mode::ImportPath
+                | Mode::ExportPath
+        ) {
+            self.render_input_popup(f);
+        }
     }
 
     fn render_header(&self, f: &mut Frame, area: Rect) {
@@ -1722,29 +1863,19 @@ impl TuiApp {
 
     fn render_footer(&self, f: &mut Frame, area: Rect) {
         let content = match &self.mode {
-            Mode::AddName | Mode::AddSecret | Mode::AddIssuer | Mode::Rename => {
-                let label = match self.mode {
-                    Mode::AddName => "Name",
-                    Mode::AddSecret => "Secret",
-                    Mode::AddIssuer => "Issuer",
-                    Mode::Rename => "Rename",
-                    _ => "",
-                };
-                Line::from(vec![
-                    Span::styled(
-                        format!(" {}: ", label),
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(&self.input_buffer, Style::default().fg(Color::LightCyan)),
-                    Span::styled("█", Style::default().fg(Color::LightCyan)),
-                    Span::styled(
-                        "  [Enter] confirm  [Esc] cancel",
-                        Style::default().fg(Color::DarkGray),
-                    ),
-                ])
-            }
+            Mode::AddName
+            | Mode::AddSecret
+            | Mode::AddIssuer
+            | Mode::Rename
+            | Mode::EditSecret
+            | Mode::EditName
+            | Mode::EditIssuer
+            | Mode::EditGroup
+            | Mode::ImportPath
+            | Mode::ExportPath => Line::from(Span::styled(
+                " ✎ 输入中 …（见弹窗 · [Enter] 确认 · [Esc] 取消）",
+                Style::default().fg(Color::DarkGray),
+            )),
             Mode::ConfirmDelete | Mode::ConfirmClearAll => {
                 let msg = self
                     .status_message
@@ -1819,7 +1950,7 @@ impl TuiApp {
                 ])
             }
             Mode::ViewQR => Line::from(Span::styled(
-                " [Esc/v] close QR view",
+                " [↑↓] 滚动二维码  [c] 复制密钥  [Esc/v] 关闭",
                 Style::default().fg(Color::DarkGray),
             )),
             Mode::EditMenu => Line::from(vec![
@@ -1858,56 +1989,6 @@ impl TuiApp {
                 ),
                 Span::styled(" 分组  ", Style::default().fg(Color::DarkGray)),
                 Span::styled(" [Esc] cancel", Style::default().fg(Color::DarkGray)),
-            ]),
-            Mode::EditSecret | Mode::EditName | Mode::EditIssuer | Mode::EditGroup => {
-                let label = match &self.mode {
-                    Mode::EditName => "Name",
-                    Mode::EditIssuer => "Issuer",
-                    Mode::EditGroup => "Group",
-                    _ => "Secret",
-                };
-                Line::from(vec![
-                    Span::styled(
-                        format!(" {}: ", label),
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(&self.input_buffer, Style::default().fg(Color::LightCyan)),
-                    Span::styled("█", Style::default().fg(Color::LightCyan)),
-                    Span::styled(
-                        "  [Enter] save  [Esc] cancel",
-                        Style::default().fg(Color::DarkGray),
-                    ),
-                ])
-            }
-            Mode::ImportPath => Line::from(vec![
-                Span::styled(
-                    " Import: ",
-                    Style::default()
-                        .fg(Color::LightYellow)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(&self.input_buffer, Style::default().fg(Color::LightCyan)),
-                Span::styled("█", Style::default().fg(Color::LightCyan)),
-                Span::styled(
-                    "  [Enter] import  [Esc] cancel",
-                    Style::default().fg(Color::DarkGray),
-                ),
-            ]),
-            Mode::ExportPath => Line::from(vec![
-                Span::styled(
-                    " Export: ",
-                    Style::default()
-                        .fg(Color::LightGreen)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(&self.input_buffer, Style::default().fg(Color::LightCyan)),
-                Span::styled("█", Style::default().fg(Color::LightCyan)),
-                Span::styled(
-                    "  [Enter] export  [Esc] cancel",
-                    Style::default().fg(Color::DarkGray),
-                ),
             ]),
             Mode::Normal => {
                 let (msg, style) = self
@@ -2133,52 +2214,236 @@ impl TuiApp {
         f.render_widget(paragraph, popup_area);
     }
 
+    fn render_input_popup(&self, f: &mut Frame) {
+        let area = f.area();
+
+        let entry_desc = self
+            .selected_entry()
+            .and_then(|i| self.entries.get(i))
+            .map(|e| {
+                let iss = e.issuer.as_deref().map(str::trim).filter(|t| !t.is_empty());
+                match iss {
+                    Some(i) => format!("{} ({})", e.name, i),
+                    None => e.name.clone(),
+                }
+            });
+
+        let title = match &self.mode {
+            Mode::AddName | Mode::AddSecret | Mode::AddIssuer => {
+                " 添加新条目 · Add Entry ".to_string()
+            }
+            Mode::Rename => " 重命名 · Rename ".to_string(),
+            Mode::EditName | Mode::EditSecret | Mode::EditIssuer | Mode::EditGroup => {
+                format!(" 编辑: {} ", mid_trunc(entry_desc.as_deref().unwrap_or("?"), 40))
+            }
+            Mode::ImportPath => " 导入 · Import ".to_string(),
+            Mode::ExportPath => " 导出 · Export ".to_string(),
+            _ => " 输入 ".to_string(),
+        };
+
+        let field = match &self.mode {
+            Mode::AddName | Mode::EditName => "名称 Name",
+            Mode::Rename => "新名称 New name",
+            Mode::AddSecret | Mode::EditSecret => "密钥 Secret（base32）",
+            Mode::AddIssuer | Mode::EditIssuer => "发行方 Issuer（可留空，Enter 跳过）",
+            Mode::EditGroup => "分组 Group（留空 = 取消分组）",
+            Mode::ImportPath => "文件路径 File path",
+            Mode::ExportPath => "导出路径 Export path",
+            _ => "",
+        };
+
+        let popup_width = 64usize.min((area.width.saturating_sub(2)) as usize).max(36);
+        let inner_w = popup_width.saturating_sub(4);
+
+        let mut lines: Vec<Line> = Vec::new();
+        lines.push(Line::from(Span::styled(
+            format!(" 字段: {}", field),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::from(Span::styled(
+            format!(" {}", "─".repeat(inner_w)),
+            Style::default().fg(Color::DarkGray),
+        )));
+        lines.push(self.input_line_with_cursor(inner_w));
+        lines.push(Line::from(Span::styled(
+            " [←→] 移动光标  [Ctrl+V] 粘贴  [Enter] 确认  [Esc] 取消",
+            Style::default().fg(Color::DarkGray),
+        )));
+        if let Some((msg, kind)) = &self.status_message {
+            let style = match kind {
+                StatusKind::Success => Style::default().fg(Color::LightGreen),
+                StatusKind::Error => Style::default().fg(Color::LightRed),
+                StatusKind::Info => Style::default().fg(Color::DarkGray),
+            };
+            lines.push(Line::from(Span::styled(format!(" {}", msg), style)));
+        }
+
+        let popup_height = ((lines.len() + 2) as u16).min(area.height.saturating_sub(2));
+        let x = (area.width.saturating_sub(popup_width as u16)) / 2;
+        let y = (area.height.saturating_sub(popup_height)) / 2;
+        let popup_area = Rect::new(x, y, popup_width as u16, popup_height);
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Yellow))
+            .title(mid_trunc(&title, popup_width.saturating_sub(2) as usize));
+
+        f.render_widget(Clear, popup_area);
+        f.render_widget(Paragraph::new(lines).block(block), popup_area);
+    }
+
+    /// Input line with an inverted-color cursor; scrolls horizontally so the
+    /// cursor stays visible even for long values.
+    fn input_line_with_cursor(&self, inner_w: usize) -> Line<'static> {
+        let chars: Vec<char> = self.input_buffer.chars().collect();
+        let cursor = self.input_cursor.min(chars.len());
+        let widths: Vec<usize> = chars.iter().map(|c| tw(&c.to_string())).collect();
+
+        let budget = inner_w.saturating_sub(2);
+        let mut start = cursor;
+        let mut used = 0usize;
+        while start > 0 && used + widths[start - 1] <= budget {
+            used += widths[start - 1];
+            start -= 1;
+        }
+        let mut end = cursor;
+        while end < chars.len() && used + widths[end] <= budget {
+            used += widths[end];
+            end += 1;
+        }
+
+        let mut spans = vec![Span::styled(" ", Style::default())];
+        for (offset, c) in chars[start..end].iter().enumerate() {
+            let pos = start + offset;
+            let style = if pos == cursor {
+                Style::default().fg(Color::Black).bg(Color::LightCyan)
+            } else {
+                Style::default().fg(Color::LightCyan)
+            };
+            spans.push(Span::styled(c.to_string(), style));
+        }
+        if cursor == end {
+            spans.push(Span::styled("█", Style::default().fg(Color::LightCyan)));
+        }
+        Line::from(spans)
+    }
+
     fn render_qr_overlay(&self, f: &mut Frame) {
         let area = f.area();
-        let popup_width = 46u16.min(area.width.saturating_sub(4));
-        let popup_height = (self.qr_lines.len() as u16 + 6).min(area.height.saturating_sub(2));
+        let Some(entry) = self
+            .selected_entry()
+            .and_then(|i| self.entries.get(i))
+        else {
+            return;
+        };
+
+        let qr_w = self.qr_lines.iter().map(|l| tw(l)).max().unwrap_or(0);
+        let issuer_part = entry
+            .issuer
+            .as_deref()
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+            .map(|t| format!("  ({})", t))
+            .unwrap_or_default();
+        let name_full = format!("{}{}", entry.name, issuer_part);
+        let secret_full = format!(" 密钥: {}", entry.secret);
+
+        // Popup width: widest of QR / name / secret (capped), + border & margin
+        let desired_w = qr_w
+            .max(tw(&name_full))
+            .max(tw(&secret_full).min(76))
+            .max(30)
+            + 4;
+        let popup_width = (desired_w as u16)
+            .min(area.width.saturating_sub(2))
+            .max(30);
+        let inner_w = (popup_width as usize).saturating_sub(4);
+
+        let name_line = format!(" {}", mid_trunc(&name_full, inner_w.saturating_sub(1)));
+        let secret_lines = wrap_by_width(&secret_full, inner_w);
+        let status_line = self.status_message.as_ref().map(|(m, k)| {
+            let style = match k {
+                StatusKind::Success => Style::default().fg(Color::LightGreen),
+                StatusKind::Error => Style::default().fg(Color::LightRed),
+                StatusKind::Info => Style::default().fg(Color::DarkGray),
+            };
+            (format!(" {}", m), style)
+        });
+        let extra = usize::from(status_line.is_some());
+
+        // Popup height: name + secret + divider + QR + hint [+ status] (+ border)
+        let desired_h = 5 + extra + secret_lines.len() + self.qr_lines.len();
+        let popup_height = (desired_h as u16)
+            .min(area.height.saturating_sub(1))
+            .max(8.min(area.height));
+        let qr_avail = (popup_height as usize).saturating_sub(5 + extra + secret_lines.len());
+
+        let total = self.qr_lines.len();
+        let shown = qr_avail.min(total);
+        let max_scroll = total.saturating_sub(shown);
+        let scroll = self.qr_scroll.min(max_scroll);
+
         let x = (area.width.saturating_sub(popup_width)) / 2;
         let y = (area.height.saturating_sub(popup_height)) / 2;
-
         let popup_area = Rect::new(x, y, popup_width, popup_height);
+
+        let mut lines: Vec<Line> = Vec::new();
+        lines.push(Line::from(Span::styled(
+            name_line,
+            Style::default()
+                .fg(Color::LightCyan)
+                .add_modifier(Modifier::BOLD),
+        )));
+        for sl in &secret_lines {
+            lines.push(Line::from(Span::styled(
+                sl.clone(),
+                Style::default().fg(Color::Yellow),
+            )));
+        }
+        lines.push(Line::from(Span::styled(
+            format!(" {}", "─".repeat(inner_w)),
+            Style::default().fg(Color::DarkGray),
+        )));
+
+        let left_pad = (popup_width as usize)
+            .saturating_sub(2)
+            .saturating_sub(qr_w)
+            / 2;
+        for qr_line in self.qr_lines.iter().skip(scroll).take(shown) {
+            lines.push(Line::from(Span::raw(format!(
+                "{}{}",
+                " ".repeat(left_pad),
+                qr_line
+            ))));
+        }
+
+        let hint = if shown > 0 && shown < total {
+            format!(
+                " [↑↓] 滚动 {}-{}/{}  [c] 复制密钥  [Esc] 关闭",
+                scroll + 1,
+                scroll + shown,
+                total
+            )
+        } else {
+            " [c] 复制密钥  [Esc/v] 关闭".to_string()
+        };
+        lines.push(Line::from(Span::styled(
+            hint,
+            Style::default().fg(Color::DarkGray),
+        )));
+        if let Some((txt, style)) = status_line {
+            lines.push(Line::from(Span::styled(txt, style)));
+        }
 
         let block = Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Cyan))
-            .title(" Scan with phone ");
+            .title(" 扫码绑定 · Scan with phone ");
 
-        let mut lines: Vec<Line> = Vec::new();
-
-        // QR code only (no extra text that could interfere with scanning)
-        for qr_line in &self.qr_lines {
-            lines.push(Line::from(Span::raw(qr_line.clone())));
-        }
-
-        lines.push(Line::from(""));
-        if let Some(idx) = self.list_state.selected() {
-            if let Some(entry) = self.entries.get(idx) {
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        format!(" {}", entry.name),
-                        Style::default()
-                            .fg(Color::LightCyan)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(
-                        format!("  {}", entry.secret),
-                        Style::default().fg(Color::Yellow),
-                    ),
-                ]));
-            }
-        }
-        lines.push(Line::from(Span::styled(
-            " [Esc] close",
-            Style::default().fg(Color::DarkGray),
-        )));
-
-        // Clear background to avoid selection bar bleeding through
+        // Clear background so the selection bar never bleeds through the QR
         f.render_widget(Clear, popup_area);
-        let paragraph = Paragraph::new(lines).block(block);
-        f.render_widget(paragraph, popup_area);
+        f.render_widget(Paragraph::new(lines).block(block), popup_area);
     }
 }

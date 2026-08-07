@@ -59,3 +59,47 @@ pub fn copy_to_clipboard(text: &str) -> Result<(), Box<dyn std::error::Error>> {
         Err("Clipboard not supported on this platform".into())
     }
 }
+
+/// Read text from the system clipboard (used for Ctrl+V paste in TUI inputs).
+pub fn get_clipboard() -> Result<String, Box<dyn std::error::Error>> {
+    #[cfg(target_os = "macos")]
+    {
+        let out = std::process::Command::new("pbpaste").output()?;
+        Ok(String::from_utf8_lossy(&out.stdout).trim_end_matches('\n').to_string())
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let cmds = [
+            ("xclip", vec!["-selection", "clipboard", "-o"]),
+            ("xsel", vec!["--clipboard", "--output"]),
+            ("wl-paste", vec!["--no-newline"]),
+        ];
+
+        for (cmd, args) in &cmds {
+            if let Ok(out) = std::process::Command::new(cmd).args(args).output() {
+                if out.status.success() {
+                    return Ok(String::from_utf8_lossy(&out.stdout).to_string());
+                }
+            }
+        }
+
+        Err("No clipboard utility found (tried xclip, xsel, wl-paste)".into())
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let out = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-Command", "Get-Clipboard"])
+            .output()?;
+        Ok(String::from_utf8_lossy(&out.stdout)
+            .trim_end_matches("\r\n")
+            .trim_end_matches('\n')
+            .to_string())
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        Err("Clipboard not supported on this platform".into())
+    }
+}

@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.15] - 2026-08-07
+
+### Added
+- TUI 输入弹窗：添加 / 重命名 / 编辑 / 导入 / 导出统一改为独立黄框弹窗——标题写明正在编辑的条目（`编辑: 名称 (发行方)`）与当前字段，字段与输入区之间有分隔线，一眼看清写在哪里
+- 输入光标：`←`/`→`/`Home`/`End` 移动光标，`Delete` 删除光标后字符，Backspace 支持中间删除；长内容自动横向滚动，光标始终可见
+- `Ctrl+V` 粘贴：任意输入框可把系统剪贴板内容粘贴到光标处（自动过滤控制字符），成功 / 失败都有提示
+- 二维码弹窗可滚动：二维码高于可用空间时 `↑`/`↓`（或 `j`/`k`）逐行滚动，底部显示 `滚动 x-y/N` 窗口提示
+- 二维码弹窗内按 `c` 一键复制密钥（成功提示附带「请勿外泄」）
+
+### Changed
+- 二维码弹窗顶部恒显条目名称与完整密钥（过长自动换行），二维码居中；长名称 / 长密钥不再被挤出视野
+- TUI 输入态底栏统一为 `✎ 输入中 …（见弹窗）`，原先四组底栏输入行合并进弹窗
+
+### Fixed
+- 修复二维码过高时密钥被顶出弹窗、长条目名称被截断看不全的问题
+
 ## [0.1.14] - 2026-08-07
 
 ### Added
