@@ -17,6 +17,10 @@ pub struct OtpEntry {
     /// Custom group (overrides the issuer-derived group); None = auto
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
+    /// Stable INDEX id: assigned once (backfilled for legacy entries on
+    /// load), never renumbered by removes or regroups.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<u64>,
 }
 
 pub fn today_str() -> String {
@@ -60,6 +64,7 @@ impl OtpEntry {
             counter: 0,
             created_at: Some(today_str()),
             group: None,
+            id: None,
         })
     }
 
@@ -139,6 +144,7 @@ impl OtpEntry {
             counter: 0,
             created_at: Some(today_str()),
             group,
+            id: None,
         })
     }
 
@@ -285,6 +291,7 @@ mod tests {
             counter: 0,
             created_at: None,
             group: None,
+            id: None,
         };
         e.sanitize();
         assert_eq!(e.name, "dongshu.bu@1721358628378104");

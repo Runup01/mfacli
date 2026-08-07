@@ -1,6 +1,6 @@
 # 安装指南 / Installation
 
-mfacli 是**静态编译的单文件**，安装 = 把 `mfa` 二进制放进 `PATH`。无运行时、无依赖库。当前版本 **0.1.12**。
+mfacli 是**静态编译的单文件**，安装 = 把 `mfa` 二进制放进 `PATH`。无运行时、无依赖库。当前版本 **0.1.13**。
 
 ## 方式一：下载预编译包（推荐）
 
@@ -135,7 +135,7 @@ certutil -hashfile <file> SHA256                   # Windows
 ## 验证安装
 
 ```bash
-mfa --version   # → mfa 0.1.12
+mfa --version   # → mfa 0.1.13
 mfa --help      # 全部子命令
 ```
 

@@ -862,24 +862,24 @@ fn cmd_list(
     let flat = flat_sorted(entries);
 
     // ── View rows: (flat number, entry); group mode puts ★ sections first ──
-    let mut view: Vec<(usize, &storage::models::OtpEntry)> = Vec::with_capacity(flat.len());
+    let mut view: Vec<(u64, &storage::models::OtpEntry)> = Vec::with_capacity(flat.len());
     let mut custom_shown = 0usize;
     if group {
         let mut keys: Vec<&str> = flat.iter().filter_map(|e| e.group.as_deref()).collect();
         keys.sort_by_key(|k| k.to_lowercase());
         keys.dedup();
         for k in keys {
-            for (i, e) in flat.iter().enumerate() {
+            for e in &flat {
                 if e.group.as_deref() == Some(k) {
-                    view.push((i + 1, e));
+                    view.push((e.id.unwrap_or(0), e));
                     custom_shown += 1;
                 }
             }
         }
     }
-    for (i, e) in flat.iter().enumerate() {
+    for e in &flat {
         if !group || e.group.is_none() {
-            view.push((i + 1, e));
+            view.push((e.id.unwrap_or(0), e));
         }
     }
 
@@ -916,8 +916,9 @@ fn cmd_list(
 
     let name_col = max_name_w.clamp(16, 36);
     let issuer_col = max_issuer_w.clamp(12, 36);
-    let idx_w = 5.max(flat.len().to_string().len()); // "INDEX" header width
-    let idx_digits = 2.max(flat.len().to_string().len()); // zero-padded: 01, 02, …
+    let max_id = flat.iter().map(|e| e.id.unwrap_or(0)).max().unwrap_or(0);
+    let idx_w = 5.max(max_id.to_string().len()); // "INDEX" header width
+    let idx_digits = 2.max(max_id.to_string().len()); // zero-padded: 01, 02, …
     let inner_w = idx_w + 2 + name_col + 2 + issuer_col + 2 + 10 + 2 + 12 + 2 + 4;
 
     // ── Table header (open rules) ──
@@ -1039,6 +1040,13 @@ fn cmd_list(
         arg_hint("show"),
         "mfa tui".cyan(),
     );
+    if entries.iter().any(|e| e.created_at.is_none()) {
+        println!(
+            "  {}  {}",
+            "note".dimmed(),
+            "entries imported before v0.1.7 have no ADDED date; new adds/imports are stamped".dimmed(),
+        );
+    }
     println!();
     Ok(())
 }
@@ -1120,7 +1128,8 @@ fn resolve_target(
     arg: &str,
 ) -> Result<(String, Option<String>), Box<dyn std::error::Error>> {
     let entries = vault.list_entries();
-    let d = 2.max(entries.len().to_string().len()); // 与 list 显示一致的补零宽度
+    let max_id = entries.iter().map(|e| e.id.unwrap_or(0)).max().unwrap_or(0);
+    let d = 2.max(max_id.to_string().len()); // 与 list 显示一致的补零宽度
     let matches: Vec<&storage::models::OtpEntry> =
         entries.iter().filter(|e| e.name == arg).collect();
     if matches.len() == 1 {
@@ -1130,9 +1139,8 @@ fn resolve_target(
         let sorted = flat_sorted(entries);
         let idxs: Vec<String> = sorted
             .iter()
-            .enumerate()
-            .filter(|(_, e)| e.name == arg)
-            .map(|(i, _)| format!("{:0d$}", i + 1, d = d))
+            .filter(|e| e.name == arg)
+            .map(|e| format!("{:0d$}", e.id.unwrap_or(0), d = d))
             .collect();
         return Err(format!(
             "Name '{}' matches {} entries (INDEX {}); use the index instead",
@@ -1142,18 +1150,11 @@ fn resolve_target(
         )
         .into());
     }
-    if let Ok(idx) = arg.parse::<usize>() {
-        let sorted = flat_sorted(entries);
-        if (1..=sorted.len()).contains(&idx) {
-            return Ok((sorted[idx - 1].name.clone(), sorted[idx - 1].issuer.clone()));
+    if let Ok(idx) = arg.parse::<u64>() {
+        if let Some(e) = entries.iter().find(|e| e.id == Some(idx)) {
+            return Ok((e.name.clone(), e.issuer.clone()));
         }
-        return Err(
-            format!(
-                "Invalid index {} (valid: {:0d$}-{:0d$}, see `mfa list`)",
-                idx, 1, sorted.len(), d = d
-            )
-            .into(),
-        );
+        return Err(format!("Invalid index {} (see `mfa list` INDEX column)", idx).into());
     }
     Err(format!("Entry '{}' not found (see `mfa list`)", arg).into())
 }

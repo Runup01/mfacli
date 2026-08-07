@@ -30,6 +30,7 @@ impl Vault {
             for e in entries.iter_mut() {
                 e.sanitize();
             }
+            Self::assign_missing_ids(&mut entries);
             Ok(Self {
                 entries,
                 path: enc_path,
@@ -41,6 +42,7 @@ impl Vault {
             for e in entries.iter_mut() {
                 e.sanitize();
             }
+            Self::assign_missing_ids(&mut entries);
             Ok(Self {
                 entries,
                 path: plain_path,
@@ -53,6 +55,53 @@ impl Vault {
                 encrypted: false,
             })
         }
+    }
+
+    /// Assign stable INDEX ids to entries lacking one (legacy vaults /
+    /// imports) and reassign duplicates, so ids stay unique forever.
+    /// Missing ids are handed out in display (flat) order, so a vault
+    /// upgraded for the first time still shows sequential 01..N numbers.
+    fn assign_missing_ids(entries: &mut [OtpEntry]) {
+        use std::collections::HashSet;
+        let mut next = entries.iter().filter_map(|e| e.id).max().unwrap_or(0) + 1;
+        let mut seen: HashSet<u64> = HashSet::new();
+        let mut missing: Vec<usize> = Vec::new();
+        for (i, e) in entries.iter().enumerate() {
+            match e.id {
+                Some(x) if seen.insert(x) => {}
+                _ => missing.push(i),
+            }
+        }
+        missing.sort_by(|&a, &b| {
+            let ka = Self::index_key(&entries[a]);
+            let kb = Self::index_key(&entries[b]);
+            ka.cmp(&kb).then_with(|| {
+                entries[a]
+                    .name
+                    .to_lowercase()
+                    .cmp(&entries[b].name.to_lowercase())
+            })
+        });
+        for i in missing {
+            while !seen.insert(next) {
+                next += 1;
+            }
+            entries[i].id = Some(next);
+            next += 1;
+        }
+    }
+
+    /// Flat display key: trimmed issuer, else name prefix before ':', else "other".
+    fn index_key(e: &OtpEntry) -> String {
+        if let Some(iss) = e.issuer.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            return iss.to_lowercase();
+        }
+        if let Some(pos) = e.name.find(':') {
+            if pos > 0 {
+                return e.name[..pos].to_lowercase();
+            }
+        }
+        "other".to_string()
     }
 
     /// Save vault to disk

@@ -854,7 +854,7 @@ impl TuiApp {
             6,
             30,
         ) {
-            Ok(entry) => {
+            Ok(mut entry) => {
                 let name = entry.name.clone();
                 if self
                     .entries
@@ -873,6 +873,14 @@ impl TuiApp {
                     return;
                 }
                 let ident = (entry.name.clone(), entry.issuer.clone());
+                entry.id = Some(
+                    self.entries
+                        .iter()
+                        .map(|e| e.id.unwrap_or(0))
+                        .max()
+                        .unwrap_or(0)
+                        + 1,
+                );
                 self.entries.push(entry);
                 self.resort_entries();
                 self.save_vault();
@@ -1560,7 +1568,15 @@ impl TuiApp {
             + 1;
 
         let selected = self.list_state.selected().unwrap_or(0);
-        let idx_w = 2.max(self.entries.len().to_string().len());
+        let idx_w = 2.max(
+            self.entries
+                .iter()
+                .map(|e| e.id.unwrap_or(0))
+                .max()
+                .unwrap_or(0)
+                .to_string()
+                .len(),
+        );
         // Show ADDED date column only when the terminal is wide enough
         let base_w = 2 + idx_w + 1 + name_col + 1 + 2 + issuer_col + 8 + 11 + 4;
         let show_added = (area.width as usize) >= base_w + 13;
@@ -1643,7 +1659,7 @@ impl TuiApp {
                         Style::default().fg(Color::Yellow),
                     ),
                     Span::styled(
-                        format!("{:0w$} ", idx + 1, w = idx_w),
+                        format!("{:0w$} ", entry.id.unwrap_or(0), w = idx_w),
                         Style::default().fg(Color::DarkGray),
                     ),
                     Span::styled(

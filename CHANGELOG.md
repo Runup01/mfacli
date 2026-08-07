@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.13] - 2026-08-04
+
+### Changed
+- INDEX is now a stable per-entry id: assigned once at creation (legacy vaults get 01..N backfilled in list order on first load) and never renumbered — removing entry 01 no longer shifts 02→01, so numbers read from the screen stay valid across consecutive commands; removed ids leave gaps instead of being reused
+
+### Added
+- `mfa list` prints a dim note when legacy entries (imported before v0.1.7) have no ADDED date
+
 ## [0.1.12] - 2026-08-04
 
 ### Fixed

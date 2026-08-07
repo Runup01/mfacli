@@ -135,6 +135,7 @@ fn parse_otp_parameters(data: &[u8]) -> Result<OtpEntry, Box<dyn std::error::Err
         counter: 0,
         created_at: Some(crate::storage::models::today_str()),
         group: None,
+        id: None,
     })
 }
 
